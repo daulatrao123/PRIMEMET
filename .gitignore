@@ -1,0 +1,31 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# production
+/build
+
+# environment
+.env
+.env.*
+!.env.example
+
+# logs
+npm-debug.log*
+yarn-error.log*
+
+# misc
+.DS_Store
+*.pem
+/coverage
+/.vercel
+
+# Exvisit workspace metadata (not part of the application)
+/.exvisit
