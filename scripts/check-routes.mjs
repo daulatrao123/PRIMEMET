@@ -38,6 +38,7 @@ const REQUIRED = [
   "/register/seller",
   "/admin/dashboard",
   "/admin/enquiries",
+  "/admin/enquiries/[id]",
   "/admin/suppliers",
   "/admin/buyers",
   "/admin/materials",
@@ -45,6 +46,7 @@ const REQUIRED = [
   "/admin/pricing",
   "/admin/supplier-quotations",
   "/admin/quotations",
+  "/admin/quotation-preparation",
   "/admin/reports",
   "/admin/audit-log",
   "/buyer/dashboard",
@@ -144,8 +146,10 @@ for (const file of sourceFiles) {
     const resolved =
       staticRoutes.has(path) ||
       staticRoutes.has(path.replace(/\/$/, "")) ||
-      [...staticRoutes].some((route) => {
-        // /scrap-metals/[slug] style match for a concrete slug link
+      [...routes].some((route) => {
+        // /scrap-metals/[slug] style match for a concrete slug link.
+        // Matched against `routes`, not `staticRoutes`: dynamic routes were being
+        // filtered out before this comparison, so concrete links to them never resolved.
         if (!route.includes("[")) return false;
         const routeParts = route.split("/");
         const pathParts = path.split("/");

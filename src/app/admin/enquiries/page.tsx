@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Panel, PortalPage, PreviewAction, Stat } from "@/components/portal/blocks";
 import { NotConnected } from "@/components/ui/not-connected";
 import { EmptyRow, TBody, TH, THead, TR, Table } from "@/components/ui/table";
@@ -61,8 +62,20 @@ export default function AdminEnquiriesPage() {
           </THead>
           <TBody>
             <EmptyRow colSpan={6}>
-              No enquiries recorded. When the buyer forms submit, each brief will appear here with
-              its specification and checkpoint.
+              <span className="block">
+                No enquiries recorded. When the buyer forms submit, each brief will appear here with
+                its specification and checkpoint.
+              </span>
+              <span className="mt-3 block">
+                The review layout is available without records:{" "}
+                <Link
+                  href="/admin/enquiries/example"
+                  className="font-semibold text-green-700 underline underline-offset-4 hover:text-navy-950"
+                >
+                  open the enquiry detail preview
+                </Link>
+                .
+              </span>
             </EmptyRow>
           </TBody>
         </Table>

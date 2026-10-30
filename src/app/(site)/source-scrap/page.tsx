@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { PreviewForm } from "@/components/marketing/form-preview";
+import { BuyerEnquiryWizard } from "@/components/enquiry/enquiry-form";
 import { Card } from "@/components/ui/card";
-import { Field, Input, Select, Textarea } from "@/components/ui/input";
+import { NotConnected } from "@/components/ui/not-connected";
 import { PageHero } from "@/components/ui/page-hero";
 import { Section, SectionHeading } from "@/components/ui/section";
 
@@ -55,53 +55,14 @@ export default function SourceScrapPage() {
             </Card>
           </div>
 
-          <PreviewForm
-            id="source-scrap"
-            title="Send a sourcing brief"
-            description="Layout preview of the buyer brief form. Nothing is submitted from this page."
-            submitLabel="Submit brief"
-          >
-            <Field label="Company" htmlFor="source-company">
-              <Input id="source-company" name="company" placeholder="Registered business name" autoComplete="organization" />
-            </Field>
-            <Field label="Contact name" htmlFor="source-name">
-              <Input id="source-name" name="name" placeholder="Full name" autoComplete="name" />
-            </Field>
-            <Field label="Work email" htmlFor="source-email">
-              <Input id="source-email" name="email" type="email" placeholder="name@company.com" autoComplete="email" />
-            </Field>
-            <Field label="Delivery destination" htmlFor="source-destination">
-              <Input id="source-destination" name="destination" placeholder="Site or port of delivery" />
-            </Field>
-            <Field label="Grade required" htmlFor="source-grade">
-              <Select id="source-grade" name="grade" defaultValue="">
-                <option value="" disabled>
-                  Select a grade
-                </option>
-                <option>HMS 1&2</option>
-                <option>Shredded</option>
-                <option>Plate and structural</option>
-                <option>Copper millberry</option>
-                <option>Aluminium taint/tabor</option>
-                <option>Brass solids</option>
-                <option>Stainless 304 / 316</option>
-                <option>Not listed — describe below</option>
-              </Select>
-            </Field>
-            <Field label="Volume and cadence" htmlFor="source-volume">
-              <Input id="source-volume" name="volume" placeholder="e.g. 1,200 t / quarter" />
-            </Field>
-            <Field label="Specification notes" htmlFor="source-spec" className="sm:col-span-2">
-              <Textarea
-                id="source-spec"
-                name="spec"
-                placeholder="Sizing, contamination limits, presentation, and the inspection standard or documentation you require."
-              />
-            </Field>
-            <Field label="Required delivery window" htmlFor="source-window" className="sm:col-span-2">
-              <Input id="source-window" name="window" placeholder="e.g. first load within Q1, monthly thereafter" />
-            </Field>
-          </PreviewForm>
+          <div>
+            <NotConnected compact className="mb-5">
+              This sourcing wizard is a layout preview. Nothing is submitted, stored or emailed from
+              this page.
+            </NotConnected>
+
+            <BuyerEnquiryWizard id="source-scrap" idPrefix="ss" />
+          </div>
         </div>
       </Section>
     </>

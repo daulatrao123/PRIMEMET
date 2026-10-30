@@ -47,7 +47,7 @@ export function PageHero({
               </li>
               {crumbs.map((crumb) => (
                 <li key={crumb.label} className="flex items-center gap-2">
-                  <span aria-hidden="true" className="text-steel-500">
+                  <span aria-hidden="true" className="text-steel-400">
                     /
                   </span>
                   {crumb.href ? (

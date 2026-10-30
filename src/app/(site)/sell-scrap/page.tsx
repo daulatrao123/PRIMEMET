@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { PreviewForm } from "@/components/marketing/form-preview";
+import { SupplierOfferWizard } from "@/components/enquiry/supplier-offer-form";
 import { Card } from "@/components/ui/card";
-import { Field, Input, Select, Textarea } from "@/components/ui/input";
+import { NotConnected } from "@/components/ui/not-connected";
 import { PageHero } from "@/components/ui/page-hero";
 import { Section, SectionHeading } from "@/components/ui/section";
 
@@ -62,53 +62,14 @@ export default function SellScrapPage() {
             </Card>
           </div>
 
-          <PreviewForm
-            id="sell-scrap"
-            title="Offer material to the desk"
-            description="Layout preview of the seller offer form. Nothing is submitted from this page."
-            submitLabel="Submit offer"
-          >
-            <Field label="Company" htmlFor="sell-company">
-              <Input id="sell-company" name="company" placeholder="Registered business name" autoComplete="organization" />
-            </Field>
-            <Field label="Contact name" htmlFor="sell-name">
-              <Input id="sell-name" name="name" placeholder="Full name" autoComplete="name" />
-            </Field>
-            <Field label="Work email" htmlFor="sell-email">
-              <Input id="sell-email" name="email" type="email" placeholder="name@company.com" autoComplete="email" />
-            </Field>
-            <Field label="Country" htmlFor="sell-country">
-              <Input id="sell-country" name="country" placeholder="Country of operation" autoComplete="country-name" />
-            </Field>
-            <Field label="Material category" htmlFor="sell-material">
-              <Select id="sell-material" name="material" defaultValue="">
-                <option value="" disabled>
-                  Select a category
-                </option>
-                <option>Ferrous — HMS</option>
-                <option>Ferrous — shredded</option>
-                <option>Ferrous — plate and structural</option>
-                <option>Non-ferrous — copper</option>
-                <option>Non-ferrous — aluminium</option>
-                <option>Non-ferrous — brass</option>
-                <option>Stainless / alloys</option>
-                <option>Mixed or other</option>
-              </Select>
-            </Field>
-            <Field label="Estimated volume" htmlFor="sell-volume" hint="Monthly or one-off, in tonnes">
-              <Input id="sell-volume" name="volume" placeholder="e.g. 250 t / month" />
-            </Field>
-            <Field label="Collection location" htmlFor="sell-location" className="sm:col-span-2">
-              <Input id="sell-location" name="location" placeholder="City / region, or port if material is export-ready" />
-            </Field>
-            <Field label="Material details" htmlFor="sell-details" className="sm:col-span-2">
-              <Textarea
-                id="sell-details"
-                name="details"
-                placeholder="How the material is stored and prepared, what it is mixed with, and anything that limits collection."
-              />
-            </Field>
-          </PreviewForm>
+          <div>
+            <NotConnected compact className="mb-5">
+              The offer form below is a layout preview. Nothing is submitted, stored or emailed from
+              this page.
+            </NotConnected>
+
+            <SupplierOfferWizard id="sell-scrap" />
+          </div>
         </div>
       </Section>
     </>

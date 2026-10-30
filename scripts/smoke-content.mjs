@@ -1,5 +1,5 @@
 // Content assertions against the running production server.
-const BASE = "http://127.0.0.1:3100";
+const BASE = process.env.SMOKE_BASE ?? "http://127.0.0.1:3100";
 
 const LABEL = "Preview";
 let pass = 0;
@@ -38,9 +38,9 @@ function assert(name, condition, detail) {
 
 // 2. Every portal page carries the preview label and no fake session
 const portalPages = [
-  "/admin/dashboard", "/admin/enquiries", "/admin/suppliers", "/admin/buyers",
+  "/admin/dashboard", "/admin/enquiries", "/admin/enquiries/example", "/admin/suppliers", "/admin/buyers",
   "/admin/materials", "/admin/products", "/admin/pricing", "/admin/supplier-quotations",
-  "/admin/quotations", "/admin/reports", "/admin/audit-log",
+  "/admin/quotation-preparation", "/admin/quotations", "/admin/reports", "/admin/audit-log",
   "/buyer/dashboard", "/buyer/enquiries/new", "/buyer/scrap-sourcing", "/buyer/spare-parts",
   "/buyer/quotations", "/buyer/orders", "/buyer/profile",
   "/seller/dashboard", "/seller/profile", "/seller/tax", "/seller/materials",
@@ -48,7 +48,8 @@ const portalPages = [
 ];
 
 for (const path of portalPages) {
-  const { html } = await get(path);
+  const { status, html } = await get(path);
+  if (status !== 200) bad(`${path}: responds 200`, String(status));
   const hasLabel = html.includes(LABEL) && html.includes("database connection will be configured");
   if (!hasLabel) bad(`${path}: preview label`, "missing database preview label");
   if (/signed in as|logged in as|welcome back,/i.test(html)) bad(`${path}: fake session wording`);
@@ -147,6 +148,49 @@ ok("home: inspected");
 for (const path of ["/admin/dashboard", "/buyer/dashboard", "/seller/dashboard"]) {
   const res = await fetch(BASE + path, { redirect: "manual" });
   assert(`${path}: not redirected by middleware`, res.status === 200, String(res.status));
+}
+
+// 12. Enquiry wizard: multi-step, conditional, honest, and disabled
+// React splits interpolated text with <!-- --> markers in SSR output, so strip comments
+// before matching sentences that contain a value.
+const plain = (html) => html.replace(/<!--.*?-->/g, "");
+for (const path of ["/request-a-quote", "/source-scrap", "/buyer/enquiries/new", "/sell-scrap"]) {
+  const { html } = await get(path);
+  const text = plain(html);
+  assert(`${path}: multi-step wizard`, /Step 1 of \d+/.test(text));
+  assert(`${path}: step rail announced`, /aria-label="Enquiry steps"/.test(text));
+  assert(`${path}: labelled frontend preview`, /Frontend preview/.test(text));
+  assert(`${path}: disabled submit`, /Submit \(preview\)/.test(text));
+  assert(`${path}: says nothing is saved`, /does not\s*(?:<[^>]+>\s*)?send, store or email|nothing is submitted, stored or emailed/i.test(text));
+  assert(`${path}: no success claim`, !/thank you|enquiry sent|we will be in touch|message sent/i.test(text));
+}
+
+// 13. Conditional branches and unknown-answer tolerance exist in the wizard source
+{
+  const { html } = await get("/request-a-quote");
+  const text = plain(html);
+  assert("/request-a-quote: scrap vs parts switch", /Scrap metal/.test(text) && /Spare parts/.test(text));
+  assert("/request-a-quote: labels optional fields", /Optional/.test(text));
+  assert("/request-a-quote: keeps target price private", /never shown to suppliers|Kept private/i.test(text));
+  assert("/request-a-quote: defers tax to per-transaction config", /tax invoice/i.test(text));
+}
+
+// 14. Admin quotation screens: readiness, confidentiality, no invented figures
+{
+  const detail = (await get("/admin/enquiries/example")).html;
+  assert("/admin/enquiries/example: readiness indicator", /quotation-ready|Quotation-ready/i.test(detail));
+  assert("/admin/enquiries/example: clarification flags", /Clarification|clarification/.test(detail));
+  assert("/admin/enquiries/example: no currency amount", !/(?:INR|USD|EUR|GBP)\s?\d|₹\s?\d/.test(detail));
+
+  const prep = (await get("/admin/quotation-preparation")).html;
+  assert("/admin/quotation-preparation: approval required", /Approval required/.test(prep));
+  assert("/admin/quotation-preparation: no universal tax rate", /universal rate|never a hardcoded rate/i.test(prep));
+  assert("/admin/quotation-preparation: no hardcoded GST percentage", !/\b\d{1,2}\s?%\s*(?:GST|IGST|CGST|SGST)/i.test(prep));
+  assert("/admin/quotation-preparation: supplier cost marked internal", /Internal/i.test(prep));
+
+  const cmp = (await get("/admin/supplier-quotations")).html;
+  assert("/admin/supplier-quotations: confidentiality notice", /Confidential/.test(cmp));
+  assert("/admin/supplier-quotations: no supplier cost figure", !/(?:INR|USD|EUR|GBP)\s?\d|₹\s?\d/.test(cmp));
 }
 
 console.log(`\n${fail === 0 ? "✓" : "✗"} content checks: ${pass} passed, ${fail} failed`);

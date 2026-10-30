@@ -6,6 +6,9 @@ const tones = {
   navy: "bg-navy-900 text-white ring-white/10",
   steel: "bg-steel-100 text-steel-600 ring-steel-200",
   outline: "bg-transparent text-navy-700 ring-navy-200",
+  /* Semantic states used by enquiry readiness and verification status. */
+  amber: "bg-amber-50 text-amber-800 ring-amber-200",
+  red: "bg-red-50 text-red-700 ring-red-200",
 } as const;
 
 export function Badge({

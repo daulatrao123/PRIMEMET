@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import { PreviewForm } from "@/components/marketing/form-preview";
+import { BuyerEnquiryWizard, FieldStatusLegend } from "@/components/enquiry/enquiry-form";
 import { Card } from "@/components/ui/card";
-import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { NotConnected } from "@/components/ui/not-connected";
 import { PageHero } from "@/components/ui/page-hero";
 import { Section } from "@/components/ui/section";
@@ -32,64 +31,12 @@ export default function RequestQuotePage() {
       <Section tone="light">
         <div className="grid gap-10 lg:grid-cols-[1fr_320px] lg:gap-14">
           <div>
-            <NotConnected compact className="mb-8">
-              This form is a layout preview. When the platform is live, submissions will be stored
-              as enquiries with a reference number and routed to the PRIMEMET desk.
+            <NotConnected compact className="mb-6">
+              The brief below is a layout preview. When the platform is live, submissions will be
+              stored as enquiries with a reference number and routed to the PRIMEMET desk.
             </NotConnected>
 
-            <PreviewForm
-              id="request-quote"
-              title="Sourcing brief"
-              description="Tell us what you need and how it has to arrive."
-              submitLabel="Submit brief"
-              footnote="Nothing on this page is transmitted. Use the contact route for a live conversation today."
-            >
-              <Field label="Enquiry type" htmlFor="quote-type" className="sm:col-span-2">
-                <Select id="quote-type" name="type" defaultValue="">
-                  <option value="" disabled>
-                    Select what you are sourcing
-                  </option>
-                  <option>Scrap metal — ferrous</option>
-                  <option>Scrap metal — non-ferrous</option>
-                  <option>Stainless / alloys</option>
-                  <option>Industrial spare parts</option>
-                  <option>Obsolete or reverse-engineered component</option>
-                  <option>Something else</option>
-                </Select>
-              </Field>
-
-              <Field label="Company" htmlFor="quote-company">
-                <Input id="quote-company" name="company" placeholder="Registered business name" autoComplete="organization" />
-              </Field>
-              <Field label="Contact name" htmlFor="quote-name">
-                <Input id="quote-name" name="name" placeholder="Full name" autoComplete="name" />
-              </Field>
-              <Field label="Work email" htmlFor="quote-email">
-                <Input id="quote-email" name="email" type="email" placeholder="name@company.com" autoComplete="email" />
-              </Field>
-              <Field label="Country" htmlFor="quote-country">
-                <Input id="quote-country" name="country" placeholder="Where the material is delivered" autoComplete="country-name" />
-              </Field>
-              <Field label="Grade or part reference" htmlFor="quote-reference">
-                <Input id="quote-reference" name="reference" placeholder="e.g. HMS 1&2, or OEM part number" />
-              </Field>
-              <Field label="Volume or quantity" htmlFor="quote-quantity">
-                <Input id="quote-quantity" name="quantity" placeholder="e.g. 800 t / quarter, or 2 off" />
-              </Field>
-              <Field label="Delivery window" htmlFor="quote-window">
-                <Input id="quote-window" name="window" placeholder="Required by, or recurring cadence" />
-              </Field>
-              <Field label="Destination" htmlFor="quote-destination">
-                <Input id="quote-destination" name="destination" placeholder="Site, city or port" />
-              </Field>
-              <Field label="Specification and standards" htmlFor="quote-spec" className="sm:col-span-2">
-                <Textarea
-                  id="quote-spec"
-                  name="spec"
-                  placeholder="Sizing, contamination limits, inspection standard, certification or drawing requirements."
-                />
-              </Field>
-            </PreviewForm>
+            <BuyerEnquiryWizard id="request-quote" idPrefix="rq" />
           </div>
 
           <aside className="space-y-5 lg:sticky lg:top-24 lg:self-start">
@@ -107,6 +54,18 @@ export default function RequestQuotePage() {
               </ol>
             </Card>
 
+            <Card className="p-6">
+              <h2 className="text-sm font-semibold text-navy-950">Required vs optional</h2>
+              <p className="mt-2 text-xs leading-5 text-steel-600">
+                Only the essentials are required to open an enquiry. Everything else can be
+                supplied later, and technical facts you do not know are recorded as unknown rather
+                than guessed.
+              </p>
+              <div className="mt-3">
+                <FieldStatusLegend />
+              </div>
+            </Card>
+
             <Card className="border-steel-200 bg-steel-50 p-6">
               <h2 className="text-sm font-semibold text-navy-950">What helps most</h2>
               <ul className="mt-3 space-y-2 text-sm leading-6 text-steel-600">
@@ -122,6 +81,14 @@ export default function RequestQuotePage() {
                   </li>
                 ))}
               </ul>
+            </Card>
+
+            <Card className="border-navy-800 bg-navy-950 p-6 text-white">
+              <h2 className="text-sm font-semibold">Your figures stay private</h2>
+              <p className="mt-2 text-xs leading-5 text-navy-300">
+                A target price you enter is visible only to the PRIMEMET desk. It is never shown to
+                suppliers, and supplier costs are never shown to you.
+              </p>
             </Card>
           </aside>
         </div>
