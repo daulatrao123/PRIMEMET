@@ -43,7 +43,7 @@ src/
 
 **Public:** `/` · `/about` · `/scrap-metals` · `/scrap-metals/[slug]` (7 grades) ·
 `/spare-parts` · `/spare-parts/[slug]` (4 categories) · `/sell-scrap` · `/source-scrap` ·
-`/request-a-quote` · `/how-it-works` · `/industries` · `/become-a-supplier` · `/faqs` ·
+`/request-a-quote` · `/how-it-works` · `/trading-models` · `/industries` · `/become-a-supplier` · `/faqs` ·
 `/contact` · `/privacy` · `/terms`
 
 **Auth previews:** `/login` · `/admin/login` · `/register/buyer` · `/register/seller`

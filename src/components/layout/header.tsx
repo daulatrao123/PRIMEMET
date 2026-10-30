@@ -4,6 +4,7 @@ const NAV_LINKS = [
   { href: "/scrap-metals", label: "Scrap metals" },
   { href: "/spare-parts", label: "Spare parts" },
   { href: "/how-it-works", label: "How it works" },
+  { href: "/trading-models", label: "Trading models" },
   { href: "/industries", label: "Industries" },
   { href: "/about", label: "About" },
 ];

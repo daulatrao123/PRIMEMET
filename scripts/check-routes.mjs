@@ -26,6 +26,7 @@ const REQUIRED = [
   "/source-scrap",
   "/request-a-quote",
   "/how-it-works",
+  "/trading-models",
   "/industries",
   "/become-a-supplier",
   "/faqs",
