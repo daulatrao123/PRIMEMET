@@ -85,7 +85,12 @@ npm.cmd start            # serve the production build
 npm.cmd run lint         # ESLint
 npm.cmd run typecheck    # tsc --noEmit
 npm.cmd run check:routes # route + internal-link integrity check
+npm.cmd run check:wizard # real-browser wizard interaction test (needs a server on :3100)
 ```
+
+The content (`check:content`) and interaction (`check:wizard`) suites run against a served build:
+`npx.cmd --no-install next start -p 3100` in another terminal, or set `SMOKE_BASE` to the port you
+started. The wizard suite drives Chrome through the DevTools Protocol and needs no extra package.
 
 No environment variable is required for any of these commands.
 

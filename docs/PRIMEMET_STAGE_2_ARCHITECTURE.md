@@ -1160,6 +1160,21 @@ defined here, field for field:
 | §5.6 supplier quote capture | `/admin/supplier-quotations` comparison matrix |
 | §5.8 generation inputs | `/admin/quotation-preparation` |
 
+Field status is not restated in the form: each `<Field>` resolves its marker from the catalogue
+via `STATUS_BY_CONTROL_NAME`, so a label cannot promise something the catalogue does not declare,
+and `REQUIRED` controls carry `required`/`aria-required` from the same source.
+
+**Draft retention (frontend contract for Stage 2).** The wizard keeps every step and every kind
+branch mounted and hides the inactive ones, so a value entered for scrap survives a switch to
+spare parts and back, and survives moving between steps. A five-step form that discards what the
+buyer already typed is not quotable. Stage 2 must preserve the same guarantee on the server: a
+draft enquiry is persisted per submission step, not only on final submit.
+
+**Verified behaviour, not assumed behaviour.** `scripts/wizard-interaction.mjs` drives real Chrome
+over the DevTools Protocol (Node built-ins only, no test dependency) at 1440×900, 768×1024 and
+390×844. It exercises the kind switch, Back/Next, rail jumps, unknown answers, value retention,
+disabled submission, overflow and console errors — 100 assertions across the three viewports.
+
 **Still to be written:** §6 supplier matching detail, §7 tax engine (referenced by §5.5 and §5.8),
 §8 pricing engine, §9 enquiry state machine, §10 RBAC matrix, §11 API catalogue, §12 Zoho Mail
 notification and retry, §13 private document storage, §14 security and threats, §15 deployment,

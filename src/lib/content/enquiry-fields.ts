@@ -186,6 +186,33 @@ export const UNKNOWN_ALLOWED = FIELD_GROUPS.flatMap((group) =>
   group.fields.filter((field) => field.allowsUnknown).map((field) => `${group.key}.${field.key}`),
 );
 
+/**
+ * Control name → status, so each `<Field>` can mark its own input without the status being
+ * repeated by hand in the form (where it would drift from the catalogue).
+ *
+ * First group wins on a shared key: the scrap branch owns `condition`, `quantity` and `unit`,
+ * and the parts branch uses its own control names so both branches can hold a value at once.
+ */
+export const STATUS_BY_CONTROL_NAME: Record<string, FieldStatus> = (() => {
+  const map: Record<string, FieldStatus> = {};
+  for (const group of FIELD_GROUPS) {
+    for (const field of group.fields) {
+      if (!(field.key in map)) map[field.key] = field.status;
+    }
+  }
+  return {
+    ...map,
+    // Controls that exist only in the parts branch of the form.
+    productCondition: "PRODUCT",
+    productQuantity: "PRODUCT",
+    productUnit: "PRODUCT",
+    // The unit selector belongs to the optional target-price field.
+    targetUnit: "OPTIONAL",
+    // Attachment/BOM confirmations from group F.
+    bom: "OPTIONAL",
+  };
+})();
+
 /** Fields required for the enquiry to be considered priceable by the desk. */
 export const READINESS_BLOCKERS: { group: FieldGroupKey; key: string; condition?: EnquiryKind[] }[] = [
   { group: "A", key: "contactPersonName" },

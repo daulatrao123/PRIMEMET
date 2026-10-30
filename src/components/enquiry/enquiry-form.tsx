@@ -1,6 +1,9 @@
 "use client";
 
+import { Children, cloneElement, isValidElement } from "react";
+import type { ReactNode } from "react";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
+import { STATUS_BY_CONTROL_NAME } from "@/lib/content/enquiry-fields";
 import { Advance, EnquiryWizard, Step, StatusNote, WhenKind, type WizardStep } from "./wizard";
 
 /**
@@ -33,6 +36,58 @@ function UnknownOption() {
   return <option value="unknown">Unknown / not specified</option>;
 }
 
+/**
+ * For free-text technical controls, where a dropdown cannot carry the option: ticking this
+ * submits `unknown` for the control instead of forcing an invented value.
+ */
+function UnknownCheck({ name, id }: { name: string; id: string }) {
+  return (
+    <label htmlFor={id} className="mt-1 flex items-center gap-2 text-xs leading-5 text-steel-600">
+      <input
+        id={id}
+        type="checkbox"
+        name={`${name}Unknown`}
+        className="size-3.5 shrink-0 rounded-sm border-steel-300 accent-green-600"
+      />
+      Unknown / not specified — flagged for the desk, not rejected
+    </label>
+  );
+}
+
+/**
+ * A labelled field whose status marker comes from the field catalogue, keyed by control name.
+ * REQUIRED controls also receive `required` and `aria-required`, so the browser's own
+ * validation and the label agree with the catalogue instead of being maintained twice.
+ */
+function EnquiryField({
+  name,
+  label,
+  htmlFor,
+  hint,
+  className,
+  children,
+}: {
+  name: string;
+  label: string;
+  htmlFor: string;
+  hint?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const status = STATUS_BY_CONTROL_NAME[name];
+  const control =
+    status === "REQUIRED"
+      ? Children.map(children, (child) =>
+          isValidElement(child) ? cloneElement(child, { required: true, "aria-required": true } as Record<string, unknown>) : child,
+        )
+      : children;
+  return (
+    <Field label={label} htmlFor={htmlFor} hint={hint} status={status} className={className}>
+      {control}
+    </Field>
+  );
+}
+
 export function BuyerEnquiryWizard({
   id,
   idPrefix = "enq",
@@ -50,19 +105,19 @@ export function BuyerEnquiryWizard({
 
       {/* ── A. Buyer and business details ─────────────────────────────────── */}
       <Step id="A">
-        <Field label="Contact person" htmlFor={p("contact")} hint="Who the desk speaks to about this requirement.">
+        <EnquiryField name="contactPersonName" label="Contact person" htmlFor={p("contact")} hint="Who the desk speaks to about this requirement.">
           <Input id={p("contact")} name="contactPersonName" placeholder="Full name" autoComplete="name" />
-        </Field>
-        <Field label="Company / business name" htmlFor={p("company")}>
+        </EnquiryField>
+        <EnquiryField name="businessName" label="Company / business name" htmlFor={p("company")}>
           <Input id={p("company")} name="businessName" placeholder="Registered business name" autoComplete="organization" />
-        </Field>
-        <Field label="Mobile" htmlFor={p("mobile")} hint="Country code required — e.g. +91 98765 43210.">
+        </EnquiryField>
+        <EnquiryField name="mobile" label="Mobile" htmlFor={p("mobile")} hint="Country code required — e.g. +91 98765 43210.">
           <Input id={p("mobile")} name="mobile" placeholder="+91 98765 43210" autoComplete="tel" inputMode="tel" />
-        </Field>
-        <Field label="Business email" htmlFor={p("email")} hint="Purchase or desk address, not a personal one if possible.">
+        </EnquiryField>
+        <EnquiryField name="businessEmail" label="Business email" htmlFor={p("email")} hint="Purchase or desk address, not a personal one if possible.">
           <Input id={p("email")} name="businessEmail" type="email" placeholder="purchase@company.com" autoComplete="email" />
-        </Field>
-        <Field label="Business type" htmlFor={p("btype")}>
+        </EnquiryField>
+        <EnquiryField name="businessType" label="Business type" htmlFor={p("btype")}>
           <Select id={p("btype")} name="businessType" defaultValue="">
             <option value="" disabled>
               Select a business type
@@ -75,34 +130,34 @@ export function BuyerEnquiryWizard({
             <option>Recycler</option>
             <option>Other</option>
           </Select>
-        </Field>
-        <Field label="GSTIN (where applicable)" htmlFor={p("gstin")} hint="Optional to open the enquiry; required before a tax invoice.">
+        </EnquiryField>
+        <EnquiryField name="gstin" label="GSTIN (where applicable)" htmlFor={p("gstin")} hint="Optional to open the enquiry; required before a tax invoice.">
           <Input id={p("gstin")} name="gstin" placeholder="27ABCDE1234F1Z5" maxLength={15} />
-        </Field>
-        <Field label="Company website" htmlFor={p("website")} hint="Optional.">
+        </EnquiryField>
+        <EnquiryField name="website" label="Company website" htmlFor={p("website")} hint="Optional.">
           <Input id={p("website")} name="website" placeholder="https://company.com" />
-        </Field>
-        <Field label="Delivery city" htmlFor={p("city")}>
+        </EnquiryField>
+        <EnquiryField name="deliveryCity" label="Delivery city" htmlFor={p("city")}>
           <Input id={p("city")} name="deliveryCity" placeholder="Pune" />
-        </Field>
-        <Field label="Delivery state / region" htmlFor={p("state")} hint="Also a tax jurisdiction input — the rate itself is set per quotation.">
+        </EnquiryField>
+        <EnquiryField name="deliveryState" label="Delivery state / region" htmlFor={p("state")} hint="Also a tax jurisdiction input — the rate itself is set per quotation.">
           <Input id={p("state")} name="deliveryState" placeholder="Maharashtra" />
-        </Field>
-        <Field label="Delivery PIN code" htmlFor={p("pin")}>
+        </EnquiryField>
+        <EnquiryField name="deliveryPostalCode" label="Delivery PIN code" htmlFor={p("pin")}>
           <Input id={p("pin")} name="deliveryPostalCode" placeholder="411001" inputMode="numeric" />
-        </Field>
+        </EnquiryField>
 
         <Advance title="Billing address & tax details" hint="Collected later — needed for the invoice, not to open the enquiry.">
-          <Field label="Billing address" htmlFor={p("billing")} className="sm:col-span-2">
+          <EnquiryField name="billingAddress" label="Billing address" htmlFor={p("billing")} className="sm:col-span-2">
             <Textarea id={p("billing")} name="billingAddress" rows={3} placeholder="Registered billing address" />
-          </Field>
+          </EnquiryField>
         </Advance>
       </Step>
 
       {/* ── B. Scrap material requirement (conditional) ────────────────────── */}
       <Step id="B">
         <WhenKind for={["MATERIAL", "MIXED"]}>
-          <Field label="Material category" htmlFor={p("category")}>
+          <EnquiryField name="materialCategory" label="Material category" htmlFor={p("category")}>
             <Select id={p("category")} name="materialCategory" defaultValue="">
               <option value="" disabled>
                 Select a category
@@ -113,17 +168,17 @@ export function BuyerEnquiryWizard({
               <option>Mixed scrap</option>
               <UnknownOption />
             </Select>
-          </Field>
-          <Field label="Metal / material type" htmlFor={p("metal")} hint="For example copper, aluminium, mild steel.">
+          </EnquiryField>
+          <EnquiryField name="metalType" label="Metal / material type" htmlFor={p("metal")} hint="For example copper, aluminium, mild steel.">
             <Input id={p("metal")} name="metalType" placeholder="Copper" />
-          </Field>
-          <Field label="Grade" htmlFor={p("grade")} hint="Unsure is fine — the desk will propose a grade framing.">
+          </EnquiryField>
+          <EnquiryField name="grade" label="Grade" htmlFor={p("grade")} hint="Unsure is fine — the desk will propose a grade framing.">
             <Input id={p("grade")} name="grade" placeholder="e.g. HMS 1&2, Millberry, 304" />
-          </Field>
-          <Field label="Specification" htmlFor={p("spec")} hint="Sizing and limits matter more than the grade name.">
+          </EnquiryField>
+          <EnquiryField name="specification" label="Specification" htmlFor={p("spec")} hint="Sizing and limits matter more than the grade name.">
             <Input id={p("spec")} name="specification" placeholder="e.g. 0–300 mm, no turnings" />
-          </Field>
-          <Field label="Scrap form" htmlFor={p("form")}>
+          </EnquiryField>
+          <EnquiryField name="scrapForm" label="Scrap form" htmlFor={p("form")}>
             <Select id={p("form")} name="scrapForm" defaultValue="">
               <option value="" disabled>
                 Select a form
@@ -133,8 +188,8 @@ export function BuyerEnquiryWizard({
               ))}
               <UnknownOption />
             </Select>
-          </Field>
-          <Field label="Condition" htmlFor={p("condition")}>
+          </EnquiryField>
+          <EnquiryField name="condition" label="Condition" htmlFor={p("condition")}>
             <Select id={p("condition")} name="condition" defaultValue="">
               <option value="" disabled>
                 Select a condition
@@ -144,27 +199,27 @@ export function BuyerEnquiryWizard({
               ))}
               <UnknownOption />
             </Select>
-          </Field>
-          <Field label="Quantity" htmlFor={p("qty")}>
+          </EnquiryField>
+          <EnquiryField name="quantity" label="Quantity" htmlFor={p("qty")}>
             <Input id={p("qty")} name="quantity" placeholder="250" inputMode="decimal" />
-          </Field>
-          <Field label="Unit" htmlFor={p("unit")}>
+          </EnquiryField>
+          <EnquiryField name="unit" label="Unit" htmlFor={p("unit")}>
             <Select id={p("unit")} name="unit" defaultValue="MT">
               <option value="KG">kg</option>
               <option value="MT">MT</option>
               <option value="TONNE">tonne</option>
             </Select>
-          </Field>
-          <Field label="Purity / composition" htmlFor={p("purity")} hint="Percentage, if known.">
+          </EnquiryField>
+          <EnquiryField name="purity" label="Purity / composition" htmlFor={p("purity")} hint="Percentage, if known.">
             <Input id={p("purity")} name="purity" placeholder="98.5" inputMode="decimal" />
-          </Field>
-          <Field label="Contamination" htmlFor={p("contam")} hint="Percentage, if known.">
+          </EnquiryField>
+          <EnquiryField name="contaminationPct" label="Contamination" htmlFor={p("contam")} hint="Percentage, if known.">
             <Input id={p("contam")} name="contaminationPct" placeholder="2" inputMode="decimal" />
-          </Field>
-          <Field label="Source of scrap" htmlFor={p("source")} hint="Optional — helps judge consistency.">
+          </EnquiryField>
+          <EnquiryField name="scrapSource" label="Source of scrap" htmlFor={p("source")} hint="Optional — helps judge consistency.">
             <Input id={p("source")} name="scrapSource" placeholder="Demolition, machining, decommissioned plant" />
-          </Field>
-          <Field label="Sample availability" htmlFor={p("sample")}>
+          </EnquiryField>
+          <EnquiryField name="sampleAvailable" label="Sample availability" htmlFor={p("sample")}>
             <Select id={p("sample")} name="sampleAvailable" defaultValue="">
               <option value="" disabled>
                 Select an answer
@@ -173,40 +228,42 @@ export function BuyerEnquiryWizard({
               <option>No</option>
               <option>On request</option>
             </Select>
-          </Field>
+          </EnquiryField>
         </WhenKind>
 
         {/* ── C. Industrial spare-part requirement (conditional) ───────────── */}
         <WhenKind for={["PRODUCT", "MIXED"]}>
-          <Field label="Product category" htmlFor={p("pcat")}>
+          <EnquiryField name="productCategory" label="Product category" htmlFor={p("pcat")}>
             <Input id={p("pcat")} name="productCategory" placeholder="Pumps, bearings, valves, gearboxes" />
-          </Field>
-          <Field label="Product name" htmlFor={p("pname")}>
+          </EnquiryField>
+          <EnquiryField name="productName" label="Product name" htmlFor={p("pname")}>
             <Input id={p("pname")} name="productName" placeholder="e.g. centrifugal pump casing" />
-          </Field>
-          <Field label="Manufacturer / brand" htmlFor={p("brand")}>
-            <Input id={p("brand")} name="manufacturer" placeholder="OEM brand" />
-          </Field>
-          <Field label="Part number / SKU" htmlFor={p("part")} hint="If unknown, a nameplate photograph substitutes for it.">
+          </EnquiryField>
+          <EnquiryField name="manufacturer" label="Manufacturer / brand" htmlFor={p("brand")} hint="Unsure is fine — leave it as unknown and the desk will identify the OEM.">
+            <Input id={p("brand")} name="manufacturer" placeholder="OEM brand, or unknown" />
+            <UnknownCheck name="manufacturer" id={p("brand-unknown")} />
+          </EnquiryField>
+          <EnquiryField name="partNumber" label="Part number / SKU" htmlFor={p("part")} hint="If unknown, a nameplate photograph substitutes for it.">
             <Input id={p("part")} name="partNumber" placeholder="OEM part number" />
-          </Field>
-          <Field label="Technical specification" htmlFor={p("pspec")} hint="Size, rating, material, connection standard.">
+          </EnquiryField>
+          <EnquiryField name="technicalSpec" label="Technical specification" htmlFor={p("pspec")} hint="Size, rating, material, connection standard. Leave unknown if the datasheet is not to hand.">
             <Textarea id={p("pspec")} name="technicalSpec" rows={3} placeholder="Describe or paste the datasheet details" />
-          </Field>
-          <Field label="Material / grade (part)" htmlFor={p("pmat")}>
+            <UnknownCheck name="technicalSpec" id={p("pspec-unknown")} />
+          </EnquiryField>
+          <EnquiryField name="materialGrade" label="Material / grade (part)" htmlFor={p("pmat")}>
             <Input id={p("pmat")} name="materialGrade" placeholder="e.g. SS316, cast iron" />
-          </Field>
-          <Field label="Quantity (parts)" htmlFor={p("pqty")}>
+          </EnquiryField>
+          <EnquiryField name="productQuantity" label="Quantity (parts)" htmlFor={p("pqty")}>
             <Input id={p("pqty")} name="productQuantity" placeholder="2" inputMode="decimal" />
-          </Field>
-          <Field label="Unit (parts)" htmlFor={p("punit")}>
+          </EnquiryField>
+          <EnquiryField name="productUnit" label="Unit (parts)" htmlFor={p("punit")}>
             <Select id={p("punit")} name="productUnit" defaultValue="PCS">
               <option value="PCS">pcs</option>
               <option value="SET">set</option>
               <option value="M">m</option>
             </Select>
-          </Field>
-          <Field label="Condition required" htmlFor={p("pcond")}>
+          </EnquiryField>
+          <EnquiryField name="productCondition" label="Condition required" htmlFor={p("pcond")}>
             <Select id={p("pcond")} name="productCondition" defaultValue="">
               <option value="" disabled>
                 Select a condition
@@ -215,11 +272,11 @@ export function BuyerEnquiryWizard({
               <option>Refurbished</option>
               <option>Used</option>
             </Select>
-          </Field>
-          <Field label="Compatible machine / model" htmlFor={p("machine")} hint="Optional, but it widens the sourcing route.">
+          </EnquiryField>
+          <EnquiryField name="compatibleMachine" label="Compatible machine / model" htmlFor={p("machine")} hint="Optional, but it widens the sourcing route.">
             <Input id={p("machine")} name="compatibleMachine" placeholder="Machine make and model" />
-          </Field>
-          <Field label="Approved equivalents acceptable?" htmlFor={p("equiv")}>
+          </EnquiryField>
+          <EnquiryField name="equivalentAcceptable" label="Approved equivalents acceptable?" htmlFor={p("equiv")}>
             <Select id={p("equiv")} name="equivalentAcceptable" defaultValue="">
               <option value="" disabled>
                 Select an answer
@@ -228,7 +285,7 @@ export function BuyerEnquiryWizard({
               <option>No — OEM only</option>
               <option>Only with approval</option>
             </Select>
-          </Field>
+          </EnquiryField>
           <div className="sm:col-span-2">
             <Checkbox
               id={p("drawing")}
@@ -256,13 +313,13 @@ export function BuyerEnquiryWizard({
 
       {/* ── D. Delivery and logistics ─────────────────────────────────────── */}
       <Step id="D">
-        <Field label="Delivery / pickup location" htmlFor={p("location")}>
+        <EnquiryField name="deliveryLocation" label="Delivery / pickup location" htmlFor={p("location")}>
           <Input id={p("location")} name="deliveryLocation" placeholder="Site, city or port" />
-        </Field>
-        <Field label="Preferred delivery date" htmlFor={p("date")} hint="Approximate is acceptable.">
+        </EnquiryField>
+        <EnquiryField name="preferredDeliveryDate" label="Preferred delivery date" htmlFor={p("date")} hint="Approximate is acceptable.">
           <Input id={p("date")} name="preferredDeliveryDate" type="date" />
-        </Field>
-        <Field label="Freight preference" htmlFor={p("freight")}>
+        </EnquiryField>
+        <EnquiryField name="freightPreference" label="Freight preference" htmlFor={p("freight")}>
           <Select id={p("freight")} name="freightPreference" defaultValue="">
             <option value="" disabled>
               Select a preference
@@ -271,8 +328,8 @@ export function BuyerEnquiryWizard({
             <option>Separate line item</option>
             <option>Buyer-arranged transport</option>
           </Select>
-        </Field>
-        <Field label="Loading / unloading responsibility" htmlFor={p("loading")}>
+        </EnquiryField>
+        <EnquiryField name="loadingResponsibility" label="Loading / unloading responsibility" htmlFor={p("loading")}>
           <Select id={p("loading")} name="loadingResponsibility" defaultValue="">
             <option value="" disabled>
               Select a responsibility
@@ -281,15 +338,15 @@ export function BuyerEnquiryWizard({
             <option>Buyer</option>
             <option>Shared</option>
           </Select>
-        </Field>
-        <Field label="Weighbridge available" htmlFor={p("weighbridge")} hint="Optional — affects reconciliation on arrival.">
+        </EnquiryField>
+        <EnquiryField name="weighbridgeAvailable" label="Weighbridge available" htmlFor={p("weighbridge")} hint="Optional — affects reconciliation on arrival.">
           <Select id={p("weighbridge")} name="weighbridgeAvailable" defaultValue="">
             <option value="">Not specified</option>
             <option>Yes</option>
             <option>No</option>
           </Select>
-        </Field>
-        <Field label="Site inspection / loading equipment" htmlFor={p("equipment")} hint="Optional.">
+        </EnquiryField>
+        <EnquiryField name="siteInspection" label="Site inspection / loading equipment" htmlFor={p("equipment")} hint="Optional.">
           <Select id={p("equipment")} name="siteInspection" defaultValue="">
             <option value="">Not specified</option>
             <option>Crane</option>
@@ -297,8 +354,8 @@ export function BuyerEnquiryWizard({
             <option>Forklift</option>
             <option>None</option>
           </Select>
-        </Field>
-        <Field label="Inspection requirement" htmlFor={p("inspection")}>
+        </EnquiryField>
+        <EnquiryField name="inspectionRequired" label="Inspection requirement" htmlFor={p("inspection")}>
           <Select id={p("inspection")} name="inspectionRequired" defaultValue="">
             <option value="" disabled>
               Select an inspection level
@@ -308,24 +365,24 @@ export function BuyerEnquiryWizard({
             <option>Sampling</option>
             <option>Third-party inspection</option>
           </Select>
-        </Field>
+        </EnquiryField>
 
         <Advance title="Restrictions and full address" hint="Collected when the delivery is quoted.">
-          <Field label="Full delivery address" htmlFor={p("fulladdr")} className="sm:col-span-2">
+          <EnquiryField name="fullDeliveryAddress" label="Full delivery address" htmlFor={p("fulladdr")} className="sm:col-span-2">
             <Textarea id={p("fulladdr")} name="fullDeliveryAddress" rows={3} placeholder="Gate, plot, landmark and contact for entry" />
-          </Field>
-          <Field label="Transport restrictions" htmlFor={p("restrictions")} className="sm:col-span-2">
+          </EnquiryField>
+          <EnquiryField name="transportRestrictions" label="Transport restrictions" htmlFor={p("restrictions")} className="sm:col-span-2">
             <Input id={p("restrictions")} name="transportRestrictions" placeholder="e.g. no 6-axle trailers, day entry only" />
-          </Field>
+          </EnquiryField>
         </Advance>
       </Step>
 
       {/* ── E. Commercial details ─────────────────────────────────────────── */}
       <Step id="E">
-        <Field label="Target price" htmlFor={p("target")} hint="Optional. Kept private — never shown to suppliers.">
+        <EnquiryField name="targetUnitPrice" label="Target price" htmlFor={p("target")} hint="Optional. Kept private — never shown to suppliers.">
           <Input id={p("target")} name="targetUnitPrice" placeholder="e.g. 54000" inputMode="decimal" />
-        </Field>
-        <Field label="Target price unit" htmlFor={p("targetunit")} hint="The basis of the figure above.">
+        </EnquiryField>
+        <EnquiryField name="targetUnit" label="Target price unit" htmlFor={p("targetunit")} hint="The basis of the figure above.">
           <Select id={p("targetunit")} name="targetUnit" defaultValue="">
             <option value="">Not stated</option>
             <option>per kg</option>
@@ -334,76 +391,76 @@ export function BuyerEnquiryWizard({
             <option>per piece</option>
             <option>total</option>
           </Select>
-        </Field>
-        <Field label="Tax preference" htmlFor={p("tax")} hint="Preference only — the rate is configured per quotation, never fixed here.">
+        </EnquiryField>
+        <EnquiryField name="taxPreference" label="Tax preference" htmlFor={p("tax")} hint="Preference only — the rate is configured per quotation, never fixed here.">
           <Select id={p("tax")} name="taxPreference" defaultValue="EXTRA">
             <option value="INCLUDED">Tax included in the quoted price</option>
             <option value="EXTRA">Extra as applicable</option>
           </Select>
-        </Field>
-        <Field label="Payment preference" htmlFor={p("pay")}>
+        </EnquiryField>
+        <EnquiryField name="paymentPreference" label="Payment preference" htmlFor={p("pay")}>
           <Select id={p("pay")} name="paymentPreference" defaultValue="">
             <option value="">Not specified</option>
             <option>Advance</option>
             <option>Against delivery</option>
             <option>Credit</option>
           </Select>
-        </Field>
-        <Field label="Advance payment possible" htmlFor={p("advance")} hint="Percentage of value, if any.">
+        </EnquiryField>
+        <EnquiryField name="advancePayment" label="Advance payment possible" htmlFor={p("advance")} hint="Percentage of value, if any.">
           <Input id={p("advance")} name="advancePayment" placeholder="30" inputMode="decimal" />
-        </Field>
-        <Field label="Requested credit period" htmlFor={p("credit")} hint="Days.">
+        </EnquiryField>
+        <EnquiryField name="creditPeriod" label="Requested credit period" htmlFor={p("credit")} hint="Days.">
           <Input id={p("credit")} name="creditPeriod" placeholder="30" inputMode="numeric" />
-        </Field>
-        <Field label="One-time or recurring" htmlFor={p("freq")}>
+        </EnquiryField>
+        <EnquiryField name="requirementFrequency" label="One-time or recurring" htmlFor={p("freq")}>
           <Select id={p("freq")} name="requirementFrequency" defaultValue="ONE_TIME">
             <option value="ONE_TIME">One-time requirement</option>
             <option value="RECURRING">Recurring requirement</option>
           </Select>
-        </Field>
-        <Field label="Monthly quantity (recurring only)" htmlFor={p("monthly")} hint="Required only when the requirement repeats.">
+        </EnquiryField>
+        <EnquiryField name="monthlyQuantity" label="Monthly quantity (recurring only)" htmlFor={p("monthly")} hint="Required only when the requirement repeats.">
           <Input id={p("monthly")} name="monthlyQuantity" placeholder="e.g. 80 MT / month" />
-        </Field>
-        <Field label="Quotation validity preference" htmlFor={p("validity")} hint="Days you need the price to hold.">
+        </EnquiryField>
+        <EnquiryField name="quotationValidity" label="Quotation validity preference" htmlFor={p("validity")} hint="Days you need the price to hold.">
           <Input id={p("validity")} name="quotationValidity" placeholder="15" inputMode="numeric" />
-        </Field>
-        <Field label="Commercial remarks" htmlFor={p("remarks")} className="sm:col-span-2">
+        </EnquiryField>
+        <EnquiryField name="commercialRemarks" label="Commercial remarks" htmlFor={p("remarks")} className="sm:col-span-2">
           <Textarea id={p("remarks")} name="commercialRemarks" rows={3} placeholder="Anything commercial the desk should know" />
-        </Field>
+        </EnquiryField>
       </Step>
 
       {/* ── F. Additional information ─────────────────────────────────────── */}
       <Step id="F">
-        <Field label="Requirement description" htmlFor={p("desc")} className="sm:col-span-2" hint="What it is for, and what failure would cost.">
+        <EnquiryField name="requirementDescription" label="Requirement description" htmlFor={p("desc")} className="sm:col-span-2" hint="What it is for, and what failure would cost.">
           <Textarea id={p("desc")} name="requirementDescription" rows={4} placeholder="Context for the desk" />
-        </Field>
-        <Field label="Sample requirement" htmlFor={p("samplereq")}>
+        </EnquiryField>
+        <EnquiryField name="sampleRequirement" label="Sample requirement" htmlFor={p("samplereq")}>
           <Select id={p("samplereq")} name="sampleRequirement" defaultValue="">
             <option value="">Not specified</option>
             <option>Not needed</option>
             <option>Before award</option>
             <option>Before dispatch</option>
           </Select>
-        </Field>
-        <Field label="Inspection availability" htmlFor={p("inspectav")}>
+        </EnquiryField>
+        <EnquiryField name="inspectionAvailability" label="Inspection availability" htmlFor={p("inspectav")}>
           <Select id={p("inspectav")} name="inspectionAvailability" defaultValue="">
             <option value="">Not specified</option>
             <option>Open</option>
             <option>By appointment</option>
             <option>None</option>
           </Select>
-        </Field>
-        <Field label="Preferred communication" htmlFor={p("comm")}>
+        </EnquiryField>
+        <EnquiryField name="preferredCommunication" label="Preferred communication" htmlFor={p("comm")}>
           <Select id={p("comm")} name="preferredCommunication" defaultValue="">
             <option value="">No preference</option>
             <option>Email</option>
             <option>Phone</option>
             <option>WhatsApp</option>
           </Select>
-        </Field>
-        <Field label="Additional instructions" htmlFor={p("instr")} className="sm:col-span-2">
+        </EnquiryField>
+        <EnquiryField name="additionalInstructions" label="Additional instructions" htmlFor={p("instr")} className="sm:col-span-2">
           <Textarea id={p("instr")} name="additionalInstructions" rows={3} placeholder="Anything else the desk needs" />
-        </Field>
+        </EnquiryField>
         <div className="sm:col-span-2">
           <Checkbox
             id={p("excel")}

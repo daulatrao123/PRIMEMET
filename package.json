@@ -9,7 +9,9 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "check:routes": "node scripts/check-routes.mjs"
+    "check:routes": "node scripts/check-routes.mjs",
+    "check:content": "node scripts/smoke-content.mjs",
+    "check:wizard": "node scripts/wizard-interaction.mjs"
   },
   "dependencies": {
     "next": "15.5.4",

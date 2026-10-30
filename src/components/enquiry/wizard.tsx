@@ -4,6 +4,8 @@ import { createContext, useCallback, useContext, useMemo, useState } from "react
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { FieldStatusMark } from "@/components/ui/input";
+import type { FieldStatus } from "@/lib/content/enquiry-fields";
 import { cx } from "@/lib/cx";
 
 /**
@@ -207,18 +209,31 @@ function WizardKindPicker({ kinds }: { kinds: readonly { value: string; label: s
   );
 }
 
-/** Renders its fields only while its step is the active one. */
+/** Renders its fields only while its step is the active one — but never unmounts them. */
 export function Step({ id, children }: { id: string; children: ReactNode }) {
   const { activeId } = useWizard();
-  if (activeId !== id) return null;
-  return <>{children}</>;
+  const active = activeId === id;
+  // Kept mounted and hidden rather than unmounted: unmounting throws away everything the
+  // buyer typed on this step the moment they move to another one. `contents` keeps the
+  // fields as direct grid children while the step is active.
+  return (
+    <div hidden={!active} className={active ? "contents" : undefined}>
+      {children}
+    </div>
+  );
 }
 
-/** Shown only when the selected requirement kind is in `for`. */
+/** Shown only when the selected requirement kind is in `for` — also kept mounted. */
 export function WhenKind({ for: kinds, children }: { for: readonly string[]; children: ReactNode }) {
   const { kind } = useWizard();
-  if (!kinds.includes(kind)) return null;
-  return <>{children}</>;
+  const active = kinds.includes(kind);
+  // Hidden rather than unmounted, so switching scrap → parts → scrap does not discard the
+  // quantity and unit already entered for the other branch.
+  return (
+    <div hidden={!active} className={active ? "contents" : undefined}>
+      {children}
+    </div>
+  );
 }
 
 /**
@@ -248,15 +263,8 @@ export function Advance({
 }
 
 /** Required / conditional / optional marker used beside every field label. */
-export function StatusNote({ status }: { status: "REQUIRED" | "SCRAP" | "PRODUCT" | "DELIVERY" | "OPTIONAL" | "LATER" }) {
-  const map = {
-    REQUIRED: { text: "Required", tone: "text-green-700" },
-    SCRAP: { text: "Required for scrap", tone: "text-steel-600" },
-    PRODUCT: { text: "Required for parts", tone: "text-steel-600" },
-    DELIVERY: { text: "Needed for delivered quote", tone: "text-steel-600" },
-    OPTIONAL: { text: "Optional", tone: "text-steel-500" },
-    LATER: { text: "Collected later", tone: "text-steel-500" },
-  } as const;
-  const item = map[status];
-  return <span className={cx("ml-2 text-[0.65rem] font-medium normal-case tracking-normal", item.tone)}>{item.text}</span>;
+export function StatusNote({ status }: { status: FieldStatus }) {
+  // One implementation of the marker, shared with the Field primitive, so the legend and
+  // the field labels can never disagree.
+  return <FieldStatusMark status={status} />;
 }
