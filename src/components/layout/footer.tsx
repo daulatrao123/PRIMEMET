@@ -26,6 +26,7 @@ const COLUMNS = [
       { href: "/about", label: "About PRIMEMET" },
       { href: "/how-it-works", label: "How it works" },
       { href: "/trading-models", label: "Trading models" },
+      { href: "/quality-assurance", label: "Quality assurance" },
       { href: "/industries", label: "Industries" },
       { href: "/faqs", label: "FAQs" },
     ],

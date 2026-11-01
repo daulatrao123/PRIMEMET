@@ -6,12 +6,13 @@ import { NotConnected } from "@/components/ui/not-connected";
 import { PageHero } from "@/components/ui/page-hero";
 import { Section, SectionHeading } from "@/components/ui/section";
 import { MATERIALS, type Material } from "@/lib/content/materials";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Scrap metals",
-  description:
-    "Ferrous, non-ferrous and alloy scrap grades sourced against a written specification: sizing, contamination limits, presentation and inspection standard agreed before dispatch.",
-};
+  description: "Ferrous, non-ferrous and alloy scrap grades sourced against a written specification: sizing, contamination limits, presentation and inspection standard agreed before dispatch.",
+  path: "/scrap-metals",
+});
 
 function MaterialCard({ material }: { material: Material }) {
   return (

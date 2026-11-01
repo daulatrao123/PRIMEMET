@@ -4,12 +4,14 @@ import { Card } from "@/components/ui/card";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { PageHero } from "@/components/ui/page-hero";
 import { Section } from "@/components/ui/section";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+
+export const metadata: Metadata = pageMetadata({
   title: "Contact",
-  description:
-    "Contact the PRIMEMET sourcing desk about scrap supply, spare-parts procurement or supplier registration.",
-};
+  description: "Contact the PRIMEMET sourcing desk about scrap supply, spare-parts procurement or supplier registration.",
+  path: "/contact",
+});
 
 const DESKS = [
   { title: "Scrap sourcing", body: "Bulk ferrous, non-ferrous and alloy enquiries, including specification and inspection standards." },

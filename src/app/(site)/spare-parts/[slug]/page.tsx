@@ -6,7 +6,9 @@ import { Card } from "@/components/ui/card";
 import { NotConnected } from "@/components/ui/not-connected";
 import { PageHero } from "@/components/ui/page-hero";
 import { Section } from "@/components/ui/section";
+import { JsonLd } from "@/components/seo/json-ld";
 import { PARTS, getPart } from "@/lib/content/parts";
+import { WEBSITE_ID, absoluteUrl, pageMetadata } from "@/lib/seo";
 
 type PageProps = { params: Promise<{ slug: string }> };
 
@@ -20,7 +22,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   if (!part) return { title: "Category not found" };
 
-  return { title: part.name, description: part.summary };
+  return pageMetadata({
+    title: part.name,
+    description: part.summary,
+    path: `/spare-parts/${part.slug}`,
+  });
 }
 
 export default async function PartDetailPage({ params }: PageProps) {
@@ -31,6 +37,18 @@ export default async function PartDetailPage({ params }: PageProps) {
 
   return (
     <>
+      {/* No Product markup: this page describes a sourcing category, and the catalogue holds no
+          part numbers, prices or stock to declare. */}
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "WebPage",
+          name: part.name,
+          description: part.summary,
+          url: absoluteUrl(`/spare-parts/${part.slug}`),
+          isPartOf: { "@id": WEBSITE_ID },
+        }}
+      />
       <PageHero
         eyebrow="Spare parts"
         title={part.name}

@@ -1,6 +1,12 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { PortalShell } from "@/components/portal/portal-shell";
 import type { NavGroup } from "@/components/portal/side-nav";
+
+/** Seller portal preview — never indexed while it holds example layouts only. See `admin/layout.tsx`. */
+export const metadata: Metadata = {
+  robots: { index: false, follow: false, nocache: true },
+};
 
 const NAV: NavGroup[] = [
   { heading: "Overview", items: [{ href: "/seller/dashboard", label: "Dashboard" }] },

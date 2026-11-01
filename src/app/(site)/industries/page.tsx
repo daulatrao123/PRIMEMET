@@ -4,12 +4,13 @@ import { Card } from "@/components/ui/card";
 import { PageHero } from "@/components/ui/page-hero";
 import { Section } from "@/components/ui/section";
 import { INDUSTRIES } from "@/lib/content/industries";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Industries",
-  description:
-    "Sectors PRIMEMET sources for: steel and rolling, foundries, fabrication, cement and aggregates, power and utilities, and recycling.",
-};
+  description: "Sectors PRIMEMET sources for: steel and rolling, foundries, fabrication, cement and aggregates, power and utilities, and recycling.",
+  path: "/industries",
+});
 
 export default function IndustriesPage() {
   return (

@@ -4,12 +4,14 @@ import { Card } from "@/components/ui/card";
 import { NotConnected } from "@/components/ui/not-connected";
 import { PageHero } from "@/components/ui/page-hero";
 import { Section, SectionHeading } from "@/components/ui/section";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+
+export const metadata: Metadata = pageMetadata({
   title: "Source scrap",
-  description:
-    "Source ferrous, non-ferrous and alloy scrap through PRIMEMET managed programmes: written specification, qualified suppliers, inspection before dispatch and reconciled delivery.",
-};
+  description: "Source ferrous, non-ferrous and alloy scrap through PRIMEMET managed programmes: written specification, qualified suppliers, inspection before dispatch and reconciled delivery.",
+  path: "/source-scrap",
+});
 
 const INCLUDED = [
   { title: "Written specification", body: "Sizing, contamination limits, presentation and inspection standard confirmed back to you before sourcing starts." },

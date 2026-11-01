@@ -4,12 +4,14 @@ import { Card } from "@/components/ui/card";
 import { NotConnected } from "@/components/ui/not-connected";
 import { PageHero } from "@/components/ui/page-hero";
 import { Section, SectionHeading } from "@/components/ui/section";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+
+export const metadata: Metadata = pageMetadata({
   title: "Sell scrap",
-  description:
-    "Offer ferrous, non-ferrous or alloy scrap to PRIMEMET with a defined grade, volume and location. Grading discipline and documented offtake for yards and plants.",
-};
+  description: "Offer ferrous, non-ferrous or alloy scrap to PRIMEMET with a defined grade, volume and location. Grading discipline and documented offtake for yards and plants.",
+  path: "/sell-scrap",
+});
 
 const STEPS = [
   { title: "Describe the material", body: "Grade, presentation, volume and where it is held. A photograph helps more than a description." },

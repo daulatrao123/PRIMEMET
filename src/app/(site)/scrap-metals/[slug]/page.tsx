@@ -7,7 +7,9 @@ import { Card } from "@/components/ui/card";
 import { NotConnected } from "@/components/ui/not-connected";
 import { PageHero } from "@/components/ui/page-hero";
 import { Section } from "@/components/ui/section";
+import { JsonLd } from "@/components/seo/json-ld";
 import { MATERIALS, getMaterial } from "@/lib/content/materials";
+import { WEBSITE_ID, absoluteUrl, pageMetadata } from "@/lib/seo";
 
 type PageProps = { params: Promise<{ slug: string }> };
 
@@ -21,10 +23,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   if (!material) return { title: "Grade not found" };
 
-  return {
+  return pageMetadata({
     title: material.name,
     description: material.summary,
-  };
+    path: `/scrap-metals/${material.slug}`,
+  });
 }
 
 export default async function MaterialDetailPage({ params }: PageProps) {
@@ -35,6 +38,21 @@ export default async function MaterialDetailPage({ params }: PageProps) {
 
   return (
     <>
+      {/* No Product markup: the catalogue publishes no price, stock or rating, so a Product
+          declaration would have to invent one. See productSchema() in lib/seo.ts. */}
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "WebPage",
+          name: material.name,
+          description: material.summary,
+          url: absoluteUrl(`/scrap-metals/${material.slug}`),
+          isPartOf: { "@id": WEBSITE_ID },
+          // `Thing`, not `Product`: a grade description carries no offer, and a Product without
+          // offers/review/aggregateRating is reported as invalid by Google's Product reports.
+          about: { "@type": "Thing", name: material.name, description: material.summary },
+        }}
+      />
       <PageHero
         eyebrow={material.group}
         title={material.name}

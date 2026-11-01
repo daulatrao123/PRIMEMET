@@ -3,12 +3,13 @@ import { ButtonLink } from "@/components/ui/button";
 import { PageHero } from "@/components/ui/page-hero";
 import { Section } from "@/components/ui/section";
 import { FAQ_GROUPS } from "@/lib/content/faqs";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "FAQs",
-  description:
-    "Questions about PRIMEMET managed sourcing: how briefs are specified, how scrap quality is verified, how spare parts are identified, and what this preview site can do.",
-};
+  description: "Questions about PRIMEMET managed sourcing: how briefs are specified, how scrap quality is verified, how spare parts are identified, and what this preview site can do.",
+  path: "/faqs",
+});
 
 export default function FaqsPage() {
   return (

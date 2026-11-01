@@ -16,6 +16,9 @@ next-env.d.ts
 .env
 .env.*
 !.env.example
+# The Prisma CLI needs a parseable datasource URL to validate or diff the schema offline. That file
+# holds a deliberately fake placeholder and is read only by the CLI, never by Next.js.
+!/prisma/.env
 
 # logs
 npm-debug.log*
@@ -26,6 +29,12 @@ yarn-error.log*
 *.pem
 /coverage
 /.vercel
+
+# Prisma: the generated client is a build artefact, produced by `prisma generate` in the deployment
+# pipeline. The schema and every migration under prisma/ ARE committed — they are the source of truth
+# for the database, not build output. node_modules/.prisma is already covered above.
+/.prisma
+/generated
 
 # Exvisit workspace metadata (not part of the application)
 /.exvisit

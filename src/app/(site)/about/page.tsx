@@ -4,12 +4,13 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHero } from "@/components/ui/page-hero";
 import { Section, SectionHeading } from "@/components/ui/section";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "About PRIMEMET",
-  description:
-    "PRIMEMET runs managed industrial scrap sourcing and spare-parts procurement programmes for plants, mills and maintenance teams — one accountable desk, one record of truth.",
-};
+  description: "PRIMEMET runs managed industrial scrap sourcing and spare-parts procurement programmes for plants, mills and maintenance teams — one accountable desk, one record of truth.",
+  path: "/about",
+});
 
 const PRINCIPLES = [
   {

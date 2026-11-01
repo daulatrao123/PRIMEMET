@@ -14,6 +14,7 @@ export const SECONDARY_LINKS = [
   { href: "/sell-scrap", label: "Sell scrap" },
   { href: "/source-scrap", label: "Source scrap" },
   { href: "/become-a-supplier", label: "Become a supplier" },
+  { href: "/quality-assurance", label: "Quality assurance" },
   { href: "/faqs", label: "FAQs" },
   { href: "/contact", label: "Contact" },
 ];

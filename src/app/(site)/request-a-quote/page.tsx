@@ -4,12 +4,14 @@ import { Card } from "@/components/ui/card";
 import { NotConnected } from "@/components/ui/not-connected";
 import { PageHero } from "@/components/ui/page-hero";
 import { Section } from "@/components/ui/section";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+
+export const metadata: Metadata = pageMetadata({
   title: "Request a quote",
-  description:
-    "Send a scrap or spare-parts brief to PRIMEMET. Specification review first, then an indicative sourcing route — no obligation.",
-};
+  description: "Send a scrap or spare-parts brief to PRIMEMET. Specification review first, then an indicative sourcing route — no obligation.",
+  path: "/request-a-quote",
+});
 
 const AFTER = [
   "The specification is confirmed back in writing, with anything ambiguous flagged.",

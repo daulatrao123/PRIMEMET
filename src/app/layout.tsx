@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { SITE_URL } from "@/lib/seo";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
+  // Same validated origin as canonicals, sitemap.xml and robots.txt — no independent fallback.
+  metadataBase: new URL(SITE_URL),
   title: {
     default: "PRIMEMET — Managed Industrial Scrap Sourcing & Spare-Parts Procurement",
     template: "%s | PRIMEMET",

@@ -1,5 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { JsonLd } from "@/components/seo/json-ld";
+import { breadcrumbSchema } from "@/lib/seo";
 
 export type Crumb = { label: string; href?: string };
 
@@ -38,7 +40,10 @@ export function PageHero({
 
       <div className="relative mx-auto max-w-7xl px-5 pb-16 pt-12 sm:px-8 sm:pb-20 sm:pt-16">
         {crumbs.length > 0 ? (
-          <nav aria-label="Breadcrumb" className="mb-8">
+          <>
+            {/* Generated from the same array as the visible trail, so the two cannot diverge. */}
+            <JsonLd data={breadcrumbSchema(crumbs)} />
+            <nav aria-label="Breadcrumb" className="mb-8">
             <ol className="flex flex-wrap items-center gap-2 text-xs text-steel-400">
               <li>
                 <Link href="/" className="transition-colors hover:text-white">
@@ -63,6 +68,7 @@ export function PageHero({
               ))}
             </ol>
           </nav>
+          </>
         ) : null}
 
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-green-400">{eyebrow}</p>

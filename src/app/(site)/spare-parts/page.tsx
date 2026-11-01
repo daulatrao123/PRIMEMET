@@ -5,12 +5,13 @@ import { NotConnected } from "@/components/ui/not-connected";
 import { PageHero } from "@/components/ui/page-hero";
 import { Section, SectionHeading } from "@/components/ui/section";
 import { PARTS, type Part } from "@/lib/content/parts";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Industrial spare parts",
-  description:
-    "Bearings, pumps, valves, gearboxes and obsolete OEM components sourced by designation, dimension or drawing — including reverse-engineered replacement.",
-};
+  description: "Bearings, pumps, valves, gearboxes and obsolete OEM components sourced by designation, dimension or drawing — including reverse-engineered replacement.",
+  path: "/spare-parts",
+});
 
 function PartCard({ part }: { part: Part }) {
   return (

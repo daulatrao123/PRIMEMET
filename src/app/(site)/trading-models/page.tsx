@@ -4,12 +4,14 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHero } from "@/components/ui/page-hero";
 import { Section, SectionHeading } from "@/components/ui/section";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+
+export const metadata: Metadata = pageMetadata({
   title: "Flexible industrial trading & sourcing models",
-  description:
-    "PRIMEMET works through four commercial arrangements — principal trading, sourcing and procurement, agency and intermediary services, and managed industrial supply — with one point of contact for every enquiry.",
-};
+  description: "PRIMEMET works through four commercial arrangements — principal trading, sourcing and procurement, agency and intermediary services, and managed industrial supply — with one point of contact for every enquiry.",
+  path: "/trading-models",
+});
 
 const MODELS = [
   {

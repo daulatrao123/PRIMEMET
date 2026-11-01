@@ -2,11 +2,14 @@ import type { Metadata } from "next";
 import { Callout, Prose } from "@/components/ui/prose";
 import { PageHero } from "@/components/ui/page-hero";
 import { Section } from "@/components/ui/section";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+
+export const metadata: Metadata = pageMetadata({
   title: "Terms and conditions",
   description: "Terms governing use of the PRIMEMET website and the basis on which sourcing programmes are quoted.",
-};
+  path: "/terms",
+});
 
 export default function TermsPage() {
   return (

@@ -4,12 +4,14 @@ import { Card } from "@/components/ui/card";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { PageHero } from "@/components/ui/page-hero";
 import { Section, SectionHeading } from "@/components/ui/section";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+
+export const metadata: Metadata = pageMetadata({
   title: "Become a supplier",
-  description:
-    "Register a yard, stockist or specialist workshop as a PRIMEMET supplier. Categories handled, operating location and applicable licences are reviewed against live briefs.",
-};
+  description: "Register a yard, stockist or specialist workshop as a PRIMEMET supplier. Categories handled, operating location and applicable licences are reviewed against live briefs.",
+  path: "/become-a-supplier",
+});
 
 const ASKED = [
   "The categories you actually handle, not the full list of metals that exist.",

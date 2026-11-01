@@ -4,12 +4,14 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHero } from "@/components/ui/page-hero";
 import { Section, SectionHeading } from "@/components/ui/section";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+
+export const metadata: Metadata = pageMetadata({
   title: "How it works",
-  description:
-    "How a PRIMEMET sourcing brief moves from specification to delivery: four checkpoints with an owner, a decision and a record at each stage.",
-};
+  description: "How a PRIMEMET sourcing brief moves from specification to delivery: four checkpoints with an owner, a decision and a record at each stage.",
+  path: "/how-it-works",
+});
 
 const CHECKPOINTS = [
   {
