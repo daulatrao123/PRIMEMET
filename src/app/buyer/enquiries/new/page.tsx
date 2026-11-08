@@ -1,85 +1,96 @@
 import type { Metadata } from "next";
-import { BuyerEnquiryWizard, FieldStatusLegend } from "@/components/enquiry/enquiry-form";
-import { PortalPage } from "@/components/portal/blocks";
-import { Card } from "@/components/ui/card";
-import { NotConnected } from "@/components/ui/not-connected";
 
-export const metadata: Metadata = { title: "Submit enquiry" };
+import { Panel, PortalPage } from "@/components/portal/blocks";
+import { Button } from "@/components/ui/button";
+import { Field, Input, Select, Textarea } from "@/components/ui/input";
+import { requirePage } from "@/lib/auth/guards";
+import { listPublishedProducts } from "@/lib/data/catalogue";
+
+export const metadata: Metadata = { title: "New enquiry" };
+export const dynamic = "force-dynamic";
 
 /**
- * Buyer enquiry form preview.
+ * Raise an enquiry from the portal.
  *
- * The wizard captures every field the desk needs to obtain supplier quotations and price
- * a buyer quotation without calling the buyer back: groups A–F from the quotation-ready
- * lead spec, with scrap and spare-part requirements as separate conditional branches.
- *
- * TODO (Stage 2): replace the client-only wizard with a server action that validates
- * against src/lib/content/enquiry-fields.ts, writes Enquiry + EnquiryLine rows scoped to
- * the signed-in buyer's organisation, assigns the ENQ reference and queues the desk
- * notification. Persist before notifying, so a mail failure never loses the lead.
+ * The product list is the published catalogue, read from MongoDB — a buyer cannot type a product id, and
+ * the server re-resolves it against published products anyway. If a buyer arrived from a product page the
+ * id is preselected, so the two entry points into the same workflow behave the same way.
  */
-export default function BuyerEnquiryPage() {
+export default async function BuyerNewEnquiryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ product?: string; error?: string }>;
+}) {
+  const user = await requirePage(["BUYER"], "/buyer/enquiries/new");
+  const query = await searchParams;
+  const listing = await listPublishedProducts({ pageSize: 48, sort: "title" });
+
   return (
     <PortalPage
-      eyebrow="Sourcing"
-      title="Submit an enquiry"
-      description="One brief per requirement. The desk confirms the specification back to you before any supplier is contacted."
+      eyebrow="Buyer portal"
+      title="New enquiry"
+      description="Tell the desk what you need. The request is attached to your organisation, and quotes come back against the same reference."
     >
-      <NotConnected>
-        Enquiry submission is not connected. The wizard below is a layout preview: it does not
-        send, store or email anything.
-      </NotConnected>
+      {query.error ? (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {query.error}
+        </p>
+      ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_300px]">
-        <BuyerEnquiryWizard id="buyer-enquiry" idPrefix="bq" />
+      <Panel title="Requirement">
+        {listing.items.length === 0 ? (
+          <p className="text-sm text-steel-600">
+            The catalogue has no published product yet, so there is nothing to enquire about. The desk can
+            still source an item — contact them directly and it will be catalogued.
+          </p>
+        ) : (
+          <form method="post" action="/api/enquiries" className="grid gap-4 sm:grid-cols-2">
+            <Field label="Product" htmlFor="enquiry-product" className="sm:col-span-2">
+              <Select id="enquiry-product" name="productId" required defaultValue={query.product ?? ""}>
+                <option value="">Choose a product</option>
+                {listing.items.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.title}
+                    {product.partNumber ? ` — ${product.partNumber}` : ""}
+                  </option>
+                ))}
+              </Select>
+            </Field>
 
-        <aside className="space-y-4">
-          <Card className="p-5">
-            <h2 className="text-sm font-semibold text-navy-950">Give the desk enough to price</h2>
-            <p className="mt-2 text-xs leading-5 text-steel-600">
-              A complete brief is the difference between a priced quotation and another round of
-              questions. These items change the price the most:
-            </p>
-            <ul className="mt-3 space-y-2 text-xs leading-5 text-steel-600">
-              {[
-                "Size and contamination limits, not just a grade name.",
-                "The inspection standard you must meet.",
-                "Whether a documented equivalent is acceptable for parts.",
-                "The real delivery window, including site restrictions.",
-                "Whether the requirement repeats, and at what monthly volume.",
-              ].map((item) => (
-                <li key={item} className="flex items-start gap-2.5">
-                  <span aria-hidden="true" className="mt-1.5 size-1 shrink-0 rounded-full bg-green-600" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </Card>
+            <Field label="Quantity" htmlFor="enquiry-quantity">
+              <Input id="enquiry-quantity" name="quantity" required inputMode="decimal" placeholder="2500" />
+            </Field>
+            <Field label="Unit" htmlFor="enquiry-unit">
+              <Select id="enquiry-unit" name="unit" defaultValue="KG">
+                <option value="KG">Kilograms</option>
+                <option value="MT">Metric tonnes</option>
+                <option value="PIECES">Pieces</option>
+              </Select>
+            </Field>
 
-          <Card className="p-5">
-            <h2 className="text-sm font-semibold text-navy-950">Field markers</h2>
-            <div className="mt-2">
-              <FieldStatusLegend />
+            <Field label="Requirement" htmlFor="enquiry-requirements" className="sm:col-span-2" hint="Grade, tolerance, packing, delivery window — at least 20 characters.">
+              <Textarea id="enquiry-requirements" name="requirements" rows={5} required minLength={20} maxLength={4000} />
+            </Field>
+
+            <Field label="Delivery location" htmlFor="enquiry-location">
+              <Input id="enquiry-location" name="deliveryLocation" maxLength={200} placeholder="Pune, Maharashtra" />
+            </Field>
+            <Field label="Contact name" htmlFor="enquiry-contact">
+              <Input id="enquiry-contact" name="contactName" required defaultValue={user.fullName} maxLength={120} />
+            </Field>
+            <Field label="Contact email" htmlFor="enquiry-email">
+              <Input id="enquiry-email" name="contactEmail" type="email" required defaultValue={user.email} />
+            </Field>
+            <Field label="Contact phone" htmlFor="enquiry-phone">
+              <Input id="enquiry-phone" name="contactPhone" inputMode="tel" />
+            </Field>
+
+            <div className="sm:col-span-2">
+              <Button type="submit">Send enquiry</Button>
             </div>
-          </Card>
-
-          <Card className="border-steel-200 bg-steel-50 p-5">
-            <h2 className="text-sm font-semibold text-navy-950">What happens next</h2>
-            <p className="mt-2 text-xs leading-5 text-steel-600">
-              The desk reviews the brief, confirms the specification in writing and returns a
-              quotation against a chosen sourcing route. Nothing is ordered without your approval.
-            </p>
-          </Card>
-
-          <Card className="border-navy-800 bg-navy-950 p-5 text-white">
-            <h2 className="text-sm font-semibold">Kept confidential</h2>
-            <p className="mt-2 text-xs leading-5 text-navy-300">
-              Your target price and contact details stay private. Suppliers see a redacted brief
-              only, and no supplier cost is ever shown to you.
-            </p>
-          </Card>
-        </aside>
-      </div>
+          </form>
+        )}
+      </Panel>
     </PortalPage>
   );
 }
