@@ -2,10 +2,77 @@
 // DevTools Protocol. Node built-ins only — no test framework, no puppeteer, no new dependency.
 //
 // Usage: node scripts/wizard-interaction.mjs   (needs `next start` on SMOKE_BASE, default :3100)
+import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+// ── Self-seeding ─────────────────────────────────────────────────────────────────────────────────────
+// WHY THIS FILE SEEDS ITS OWN SERVER. The admin half of this suite signs in as a real administrator, and a
+// run without credentials reports a FAILURE ("SMOKE_ADMIN_EMAIL and SMOKE_ADMIN_PASSWORD are not set")
+// rather than skipping it — deliberately, because an unproven half must never look green. But `npm run
+// check:wizard` runs THIS file, so while the seeding lived in a separate wrapper the documented command
+// produced exactly one failure every time: 91 passed, 1 failed. The seed now lives here, so the
+// documented command cannot run without an administrator. It is an isolated in-memory replica set, the
+// repository's own migrations, one administrator written directly to the database, and `next start`
+// against it — all torn down at the end, and nothing bypasses a validator to make an assertion pass.
+const seeded = { server: null, mongo: null };
+
+if (!(process.env.SMOKE_BASE && process.env.SMOKE_ADMIN_EMAIL && process.env.SMOKE_ADMIN_PASSWORD)) {
+  if (!existsSync(join(process.cwd(), ".next", "BUILD_ID"))) {
+    console.error("no production build; run npm run build first");
+    process.exit(1);
+  }
+  await import("./lib/register-ts.mjs");
+  const { APP_ORIGIN, AUTH_SECRET, migrate, scratchDb, startMongo, startServer } = await import(
+    "./lib/m1-verify-core.mjs"
+  );
+  const stamp = `${Date.now()}_${randomUUID().slice(0, 6)}`;
+  const dbName = scratchDb("wizard", stamp);
+  const seedPort = Number(process.env.SMOKE_PORT ?? 3280);
+  const seedEmail = `wizard-admin-${stamp}@verify.primemet.test`;
+  const seedPassword = `WizardAdmin${randomUUID().slice(0, 10)}`;
+
+  seeded.mongo = await startMongo();
+  const seedDb = seeded.mongo.client.db(dbName);
+  await migrate(seedDb, { appliedBy: "wizard-self-seed" });
+
+  process.env.MONGODB_URI = seeded.mongo.uri;
+  process.env.MONGODB_DB = dbName;
+  process.env.PRIMEMET_ENV = "test";
+  process.env.AUTH_SECRET = AUTH_SECRET;
+  process.env.NEXT_PUBLIC_APP_URL = APP_ORIGIN;
+  process.env.NODE_ENV = "production";
+
+  const { hashPassword } = await import("../src/lib/auth/password.ts");
+  const seedNow = new Date();
+  await seedDb.collection("users").insertOne({
+    _id: randomUUID(),
+    email: seedEmail,
+    emailVerifiedAt: seedNow,
+    passwordHash: await hashPassword(seedPassword),
+    passwordChangedAt: seedNow,
+    fullName: "Wizard Self-Seed Admin",
+    phone: null,
+    locale: "en-IN",
+    role: "ADMIN",
+    status: "ACTIVE",
+    mfaEnabled: false,
+    mfaSecretCiphertext: null,
+    failedLoginCount: 0,
+    lockedUntil: null,
+    lastLoginAt: null,
+    deletedAt: null,
+    createdAt: seedNow,
+    updatedAt: seedNow,
+  });
+
+  seeded.server = await startServer({ port: seedPort, uri: seeded.mongo.uri, dbName });
+  process.env.SMOKE_BASE = seeded.server.baseUrl;
+  process.env.SMOKE_ADMIN_EMAIL = seedEmail;
+  process.env.SMOKE_ADMIN_PASSWORD = seedPassword;
+}
 
 const BASE = process.env.SMOKE_BASE ?? "http://127.0.0.1:3100";
 const CHROME = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
@@ -303,27 +370,96 @@ try {
     check(`${viewport.label}: no visible parts inputs while scrap selected`, strayParts.length === 0, strayParts.join(","));
   }
 
-  // 11. Admin enquiry detail renders the captured field catalogue.
+  // 11. Admin enquiry detail.
+  //
+  // WHY THIS IS SPLIT IN TWO. This section used to navigate to an admin page with no session and assert
+  // its content rendered. That was true in Stage 1, when every portal route was public; the admin area is
+  // now closed to an anonymous visitor, so the old assertion could only ever fail — and it failed by
+  // reporting twelve missing headings rather than the one fact that mattered. The access-control
+  // behaviour is now asserted as its own check, deliberately without a session, and the content
+  // assertions run behind a real admin sign-in when this run was given credentials.
   console.log("\n── admin enquiry detail ──");
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+
+  // A NOTE ON WHAT USED TO BE HERE. Twelve assertions checked headings on /admin/enquiries/example:
+  // "Buyer & business details", "Supplier matching", "quotation-ready" and so on. None of those strings
+  // exists in the application any more — they belonged to a hardcoded Stage-1 placeholder page. The
+  // detail page is now read from the database and calls notFound() for an id it cannot find, so those
+  // assertions could not pass however the session was obtained. They are replaced by the behaviour the
+  // implemented page does have: a signed-in administrator reaches the queue, and an id that does not
+  // exist is a 404 rather than an empty shell. The enquiry-detail-with-data path is covered by the
+  // authenticated suites (verify:m2…m5, check:acceptance), which create real enquiries.
+
+  // 11a. Unauthenticated: the browser must be sent to the sign-in, with the destination preserved, and
+  // must not receive a single heading of the enquiry.
   await send("Page.navigate", { url: `${BASE}/admin/enquiries/example` });
   await sleep(1200);
-  const adminText = await evaluate("document.body.innerText");
-  for (const marker of [
-    "Buyer & business details",
-    "Material / product specifications",
-    "Quantity & units",
-    "Delivery & logistics",
-    "Commercial requirements",
-    "Attachments",
-    "Missing information & clarification checklist",
-    "Supplier matching",
-    "Supplier quotation comparison",
-    "Buyer quotation preparation",
-    "Clarification checklist",
-    "quotation-ready",
-  ]) {
-    check(`admin: shows "${marker.slice(0, 38)}"`, adminText.toLowerCase().includes(marker.toLowerCase()));
+  const anonymousUrl = await evaluate("location.pathname + location.search");
+  const anonymousText = await evaluate("document.body.innerText");
+  check("admin: anonymous browser is redirected to the sign-in", /^\/admin\/login\b/.test(String(anonymousUrl)), String(anonymousUrl));
+  check("admin: redirect keeps the requested destination", /[?&]next=/.test(String(anonymousUrl)), String(anonymousUrl));
+  check(
+    "admin: no enquiry content reaches an anonymous browser",
+    !/Buyer & business details|Supplier quotation comparison/i.test(anonymousText),
+  );
+
+  // 11b. Authenticated: sign in over HTTP, hand the browser the session cookie, then read the page.
+  const adminEmail = process.env.SMOKE_ADMIN_EMAIL;
+  const adminPassword = process.env.SMOKE_ADMIN_PASSWORD;
+  if (!adminEmail || !adminPassword) {
+    // A missing credential is reported as a failure, not skipped: the admin half of this suite is
+    // unproven until someone runs it with an account, and a silent pass would hide that.
+    check(
+      "admin: enquiry content verified with an admin session",
+      false,
+      "SMOKE_ADMIN_EMAIL and SMOKE_ADMIN_PASSWORD are not set, so the admin content assertions did not run",
+    );
+  } else {
+    const loginResponse = await fetch(`${BASE}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword, area: "admin" }),
+    });
+    check("admin: sign-in succeeded", loginResponse.status === 200, String(loginResponse.status));
+
+    const raw = loginResponse.headers.getSetCookie().find((value) => /session/i.test(value));
+    const pair = raw ? raw.split(";")[0] : "";
+    const separator = pair.indexOf("=");
+    const cookieName = separator === -1 ? "" : pair.slice(0, separator);
+    const cookieValue = separator === -1 ? "" : pair.slice(separator + 1);
+    check("admin: sign-in issued a session cookie", cookieName.length > 0 && cookieValue.length > 0, pair ? cookieName : "no set-cookie");
+
+    await send("Network.enable");
+    await send("Network.setCookie", {
+      name: cookieName,
+      value: cookieValue,
+      domain: "127.0.0.1",
+      path: "/",
+      httpOnly: true,
+      // The cookie is minted for an https origin but this run is against http://127.0.0.1; the browser
+      // must accept it on the loopback host or none of the assertions below can be reached.
+      secure: false,
+    });
+
+    // An unknown id must not resolve to an empty shell or to another party's record.
+    await send("Page.navigate", { url: `${BASE}/admin/enquiries/no-such-enquiry-${Date.now()}` });
+    await sleep(1200);
+    const missingText = await evaluate("document.body.innerText");
+    check(
+      "admin: an unknown enquiry id is not found, not an empty page",
+      /not in the control centre/i.test(String(missingText)) && /No data was changed/i.test(String(missingText)),
+      String(missingText).slice(0, 80),
+    );
+
+    // The queue is the desk's landing page and needs no fixture.
+    await send("Page.navigate", { url: `${BASE}/admin/enquiries` });
+    await sleep(1200);
+    const queueUrl = await evaluate("location.pathname");
+    check("admin: the enquiries queue is served to a signed-in administrator", String(queueUrl).startsWith("/admin/enquiries"), String(queueUrl));
+    const queueText = await evaluate("document.body.innerText");
+    for (const marker of ["Enquiries", "Filter", "Queue", "Reference", "Quantity"]) {
+      check(`admin queue: shows "${marker}"`, queueText.toLowerCase().includes(marker.toLowerCase()));
+    }
   }
 
   check("no console errors during interaction", consoleErrors.length === 0, consoleErrors.slice(0, 3).join(" | "));
@@ -340,8 +476,22 @@ try {
   } catch {
     /* Chrome may still hold the profile briefly */
   }
+  // Tear down whatever this run started, so a failure leaves no server or database behind.
+  try {
+    await seeded.server?.stop();
+  } catch {
+    /* ignore */
+  }
+  try {
+    await seeded.mongo?.stop();
+  } catch {
+    /* ignore */
+  }
 }
 
 console.log(`\n${fail === 0 ? "✓" : "✗"} wizard interaction checks: ${pass} passed, ${fail} failed`);
 if (failures.length) console.log(`failed: ${failures.join("; ")}`);
-process.exit(fail === 0 ? 0 : 1);
+// Sets the exit code instead of calling process.exit(), so that a caller which started a database and a
+// server for this suite (scripts/check-wizard.mjs) gets control back and can stop them. process.exit()
+// here would terminate the process before any cleanup could run and leave both behind.
+process.exitCode = fail === 0 ? 0 : 1;
