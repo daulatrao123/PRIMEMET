@@ -2,9 +2,9 @@
 #
 # Deliberately conservative: this file declares HOW Git should treat content. A blanket `eol=lf`
 # override would rewrite every already-committed file on the next checkout, producing a large
-# whitespace-only diff unrelated to any real change, so the override is limited to `*.mjs` — the
-# one extension whose working-tree bytes are hashed and compared across machines. See the
-# MANDATORY block below.
+# whitespace-only diff unrelated to any real change, so the override is limited to the extensions
+# whose working-tree bytes are hashed or compared across machines: `*.mjs`, `*.sql`, `*.prisma`.
+# See the MANDATORY blocks below.
 #
 # Default: let Git detect text and normalise to LF in the repository (the canonical form), while
 # each developer's working tree keeps their platform convention.
@@ -17,7 +17,7 @@
 
 # --- Explicit text types ---------------------------------------------------
 # These are always text; normalise in the repository. No `eol` override, so no rewrite —
-# except `*.mjs`, which is pinned to LF for the reason given in the next block.
+# except `*.mjs`, `*.sql` and `*.prisma`, which are pinned to LF for the reasons given below.
 *.ts        text
 *.tsx       text
 *.js        text
@@ -26,8 +26,8 @@
 *.json      text
 *.md        text
 *.css       text
-*.prisma    text
-*.sql       text
+*.prisma    text eol=lf
+*.sql       text eol=lf
 *.toml      text
 *.yml       text
 *.yaml      text
@@ -59,6 +59,20 @@
 # silently diverge between platforms again, and only on a fresh clone — never on the tree the
 # change was authored in.
 
+# --- MANDATORY: `*.sql` and `*.prisma` are pinned to LF in the working tree --
+# The SQL migrations and Prisma schemas are compared against frozen fixture text by
+# `scripts/check-schema.mjs` and `scripts/check-schema-m1.mjs`, which read them with
+# `readFileSync(..., "utf8")` and split on "\n" — with no CR normalisation anywhere. On a Windows
+# checkout under `core.autocrlf=true` the worktree is CRLF, every line carries a stray `\r`, and
+# comparisons that are correct on an LF checkout fail:
+#   - `check-schema`    : 58 passed / 3 failed   (expected 61 / 0)
+#   - `check-schema:m1` : 21 passed / 4 failed   (expected 25 / 0)
+# With `eol=lf` both report 61 / 0 and 25 / 0 on the same stock Windows configuration.
+#
+# This changes no repository blob — every `*.sql` and `*.prisma` blob was already LF and is
+# byte-identical before and after (verified with `git hash-object` vs `git rev-parse HEAD:`).
+# It only stops the checkout from rewriting the bytes those assertions read.
+
 # --- Always binary ---------------------------------------------------------
 # Never diff, never convert. Declared so Git cannot corrupt them by guessing.
 *.png       binary
@@ -80,7 +94,7 @@ package-lock.json  -diff linguist-generated
 prisma/migrations/** -diff linguist-generated
 
 # ---------------------------------------------------------------------------
-# PARTIALLY ENABLED — `*.mjs` only, by owner decision (F-A remediation).
+# PARTIALLY ENABLED — `*.mjs`, `*.sql`, `*.prisma`, by owner decision (F-A and F-G remediations).
 #
 # The wider strict policy below is still NOT applied:
 #
@@ -88,9 +102,9 @@ prisma/migrations/** -diff linguist-generated
 #     *.tsx text eol=lf
 #     ...
 #
-# `*.mjs` carries `eol=lf` because its bytes are hashed into migration integrity digests. No
-# other extension is hashed, so no other extension needs the override, and pinning them would
-# rewrite the tree once for no security or integrity benefit.
+# `*.mjs` carries `eol=lf` because its bytes are hashed into migration integrity digests;
+# `*.sql` and `*.prisma` carry it because their bytes are compared against frozen fixture text.
+# No other extension is hashed or byte-compared, so no other extension needs the override.
 #
 # If the blanket policy is ever wanted, do it as a single dedicated commit
 # (`git add --renormalize .`) so review shows one whitespace-only change instead of mixing it
