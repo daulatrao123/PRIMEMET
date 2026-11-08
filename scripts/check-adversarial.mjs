@@ -51,6 +51,9 @@ import { ADMIN_PERMISSIONS } from "../src/lib/permissions/types.ts";
 import { TIER_DEFAULTS } from "../src/lib/permissions/tiers.ts";
 import { NON_DELEGABLE, wouldLockOutSuperAdmins } from "../src/lib/permissions/delegation.ts";
 import * as store from "../src/lib/permissions/store.ts";
+import { resolveAdminPermissions } from "../src/lib/permissions/resolve.ts";
+import { integrityTag } from "../src/lib/permissions/integrity.ts";
+import { declaredEnvironment, permissionIntegrityPosture } from "../src/lib/env.ts";
 
 const OFFLINE = process.argv.includes("--offline");
 const NOW = new Date("2026-11-01T12:00:00.000Z");
@@ -395,12 +398,104 @@ async function holdersOf(db, admins) {
 }
 
 // ---------------------------------------------------------------------------
+// P2 — the permission-event signing key is load-bearing in production (W3.3).
+// ---------------------------------------------------------------------------
+// W3.3 was reachable because an unkeyed deployment reported UNKEYED for every stored event and UNKEYED
+// was the one verdict that did not fail, so a hand-written, validator-conforming GRANT was honoured.
+// These assertions are pure — they need no database — and they pin both halves: the resolver's refusal
+// in production, and the fact that a correctly signed event is still honoured.
+function signingPosture() {
+  section("P2. Unsigned permission events (W3.3)");
+
+  const actor = {
+    user: { role: "ADMIN", status: "ACTIVE", deletedAt: null },
+    profile: { id: "admin-p2", isActive: true, tier: "SUPER_ADMIN" },
+    org: { orgKind: "PRIMEMET", accountStatus: "ACTIVE" },
+  };
+  const forged = {
+    adminId: "admin-p2",
+    permission: "DATABASE_APPLY_MIGRATION",
+    effect: "GRANT",
+    seq: 1,
+    eventId: "evt-forged",
+    grantedById: "admin-p2",
+    reason: "hand-written, validator-conforming",
+    expiresAt: null,
+    createdAt: new Date(NOW.getTime() - 1000),
+  };
+  const decide = (events, options) =>
+    resolveAdminPermissions(actor, events, NOW, options).decisions.get("DATABASE_APPLY_MIGRATION");
+
+  // The pre-P2 posture, kept as a control: it is what makes the change measurable rather than assumed.
+  equal(
+    "control: without the production rule an unsigned GRANT is honoured — the W3.3 posture",
+    decide([forged], { requireIntegrity: false }).decidedBy,
+    "EVENT",
+  );
+
+  const refused = decide([forged], { requireIntegrity: true });
+  equal("in production an unsigned GRANT is refused", refused.allowed, false);
+  equal("and the decision names it invalid", refused.decidedBy, "INVALID_EVENT");
+
+  const KEY = "0123456789abcdef0123456789abcdef";
+  const signed = { ...forged, integrity: integrityTag(forged, KEY) };
+  const signedDecision = decide([signed], { integrityKey: KEY, requireIntegrity: true });
+  equal("a correctly signed GRANT is still honoured", signedDecision.decidedBy, "EVENT");
+  equal("and it is allowed", signedDecision.allowed, true);
+
+  const tampered = decide([{ ...signed, seq: 2 }], { integrityKey: KEY, requireIntegrity: true });
+  equal("a tampered GRANT is refused", tampered.decidedBy, "INVALID_EVENT");
+  equal("and it is not allowed", tampered.allowed, false);
+
+  const keyless = decide([signed], { requireIntegrity: true });
+  equal("a signed GRANT with no key configured is refused in production", keyless.decidedBy, "INVALID_EVENT");
+
+  // The default must follow the declared environment, not only an explicit option — otherwise a caller
+  // that forgets to pass one silently restores the hole. Only exercised when this runner declares no
+  // environment, which is how the suite is invoked.
+  const declared = declaredEnvironment();
+  if (declared !== undefined && declared !== "production") {
+    ok("the runner declares an environment, so the derived default is covered by check:env-blank", String(declared));
+  } else {
+    const previous = process.env.PRIMEMET_ENV;
+    process.env.PRIMEMET_ENV = "production";
+    const derived = decide([forged], {});
+    process.env.PRIMEMET_ENV = previous === undefined ? "" : previous;
+    if (previous === undefined) delete process.env.PRIMEMET_ENV;
+    equal("the production rule is derived from PRIMEMET_ENV by default", derived.decidedBy, "INVALID_EVENT");
+  }
+
+  // F-5. The non-production tolerance is deliberate — local work must run without a key — but it must be
+  // stated rather than implied, because "the resolver verifies integrity" is only true in production.
+  // Asserted against the posture this runner is actually in, so the suite reports what it observed.
+  if (permissionIntegrityPosture() !== "production") {
+    equal(
+      "F-5: outside production an unsigned GRANT is still honoured — staging is not production-grade",
+      decide([forged], {}).decidedBy,
+      "EVENT",
+    );
+  } else {
+    ok("F-5: this runner is in the production posture, so the tolerance branch is not exercised", "production");
+  }
+
+  // F-2b. An explicit declaration always wins over NODE_ENV. The NODE_ENV-only branch cannot be exercised
+  // in this process — `env.NODE_ENV` is parsed once at module load — so it is covered by `check:env-blank`,
+  // which runs the real module in a child process with a fresh environment.
+  equal(
+    "F-2b: the posture follows the declared environment, never NODE_ENV, when PRIMEMET_ENV is set",
+    permissionIntegrityPosture(),
+    declaredEnvironment() === "production" ? "production" : "other",
+  );
+}
+
+// ---------------------------------------------------------------------------
 // D/E/F/G/H/I — everything that needs a real mongod.
 // ---------------------------------------------------------------------------
 async function main() {
   definitions();
   pureRule();
   tierMatrix();
+  signingPosture();
 
   if (OFFLINE) {
     process.stdout.write("\n  (offline run: the database sections were not executed)\n");

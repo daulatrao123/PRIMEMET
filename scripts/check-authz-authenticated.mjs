@@ -506,6 +506,255 @@ async function main() {
     hold("the refused changes left the last super admin active", stillActive?.isActive === true && stillActive?.tier === "SUPER_ADMIN", JSON.stringify({ isActive: stillActive?.isActive, tier: stillActive?.tier }));
 
     // ---------------------------------------------------------------------
+    // 4b. F-1 — the continuity counter must VERIFY events, not merely read them
+    // ---------------------------------------------------------------------
+    // P2 made `UNKEYED` a failure in production. `countRemainingGrantHolders` resolved each holder
+    // without passing the signing key, so in the production posture every stored row reported UNKEYED,
+    // the newest applicable row became INVALID_EVENT, and that holder was dropped from the count. A
+    // super admin with no recorded event still counted from the tier default, which is why the defect
+    // was invisible: it only bit holders who actually had an event. The effect was a false refusal —
+    // every DENY of ACCESS_GRANT_PERMISSION against a super admin was rejected as LAST_SUPER_ADMIN, so
+    // a legitimate revocation became impossible in production. Fail-closed, but wrong.
+    //
+    // This drives the real `appendPermissionEvent` path. `countRemainingGrantHolders` is deliberately
+    // not exported, so the only honest way to test it is through the operation it guards.
+    const secondUser = randomUUID();
+    const secondProfile = randomUUID();
+    await attempt(() =>
+      owner.db(DB).collection("users").insertOne({
+        _id: secondUser,
+        email: `super2-${secondUser}@example.test`,
+        fullName: "Second Super Admin",
+        locale: "en-IN",
+        role: "ADMIN",
+        status: "ACTIVE",
+        mfaEnabled: true,
+        failedLoginCount: 0,
+        deletedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+    await attempt(() =>
+      owner.db(DB).collection("admin_profiles").insertOne({
+        _id: secondProfile,
+        userId: secondUser,
+        staffCode: `S-${secondProfile.slice(0, 8)}`,
+        tier: "SUPER_ADMIN",
+        mfaRequired: true,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+
+    // The second super admin needs a SIGNED event that decides ACCESS_GRANT_PERMISSION. Without one it
+    // would count from its tier default and the defect would stay invisible — the counter only mis-reads
+    // stored rows, so a holder with no rows is counted correctly either way.
+    const HOLDER_REASON = "F-1: give the second holder a signed event that decides access";
+    const seedHolderEvent = await store.appendPermissionEvent(app.db(DB), {
+      actorUserId: superUser,
+      target: { profileId: secondProfile, isActive: true, userIsActive: true, tier: "SUPER_ADMIN" },
+      permission: "ACCESS_GRANT_PERMISSION",
+      effect: "GRANT",
+      reason: HOLDER_REASON,
+      eventId: randomUUID(),
+      now,
+    });
+    hold(
+      "F-1 setup: a signed ACCESS_GRANT_PERMISSION event is recorded for the second super admin",
+      seedHolderEvent.ok === true,
+      JSON.stringify(seedHolderEvent),
+    );
+
+    // A THIRD super admin with its own signed event. The acceptance condition asks the positive
+    // control to prove that TWO valid holders are counted, not one: the actor is excluded from its
+    // own count, so a single remaining holder only ever demonstrates a count of 1.
+    const thirdUser = randomUUID();
+    const thirdProfile = randomUUID();
+    await attempt(() =>
+      owner.db(DB).collection("users").insertOne({
+        _id: thirdUser,
+        email: `super3-${thirdUser}@example.test`,
+        fullName: "Third Super Admin",
+        locale: "en-IN",
+        role: "ADMIN",
+        status: "ACTIVE",
+        mfaEnabled: true,
+        failedLoginCount: 0,
+        deletedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+    await attempt(() =>
+      owner.db(DB).collection("admin_profiles").insertOne({
+        _id: thirdProfile,
+        userId: thirdUser,
+        staffCode: `S-${thirdProfile.slice(0, 8)}`,
+        tier: "SUPER_ADMIN",
+        mfaRequired: true,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+    const THIRD_HOLDER_REASON = "F-1: give the third holder a signed event that decides access";
+    const seedThirdEvent = await store.appendPermissionEvent(app.db(DB), {
+      actorUserId: superUser,
+      target: { profileId: thirdProfile, isActive: true, userIsActive: true, tier: "SUPER_ADMIN" },
+      permission: "ACCESS_GRANT_PERMISSION",
+      effect: "GRANT",
+      reason: THIRD_HOLDER_REASON,
+      eventId: randomUUID(),
+      now,
+    });
+    hold(
+      "F-1 setup: a signed ACCESS_GRANT_PERMISSION event is recorded for the third super admin",
+      seedThirdEvent.ok === true,
+      JSON.stringify(seedThirdEvent),
+    );
+
+    const savedKey = process.env.PERMISSION_LOG_KEY;
+    const previousPrimemetEnv = process.env.PRIMEMET_ENV;
+    process.env.PRIMEMET_ENV = "production";
+
+    // A DENY by one super admin against ANOTHER can never drive the count to zero: the actor is always
+    // one of the remaining holders, so it counts itself. The route that can is self-removal — the actor
+    // deactivating its own profile — which is the route the existing continuity test already uses. So
+    // the actor is `superProfile`, the excluded profile is `superProfile`, and the remaining holder is
+    // `secondProfile`.
+    //
+    // POSITIVE FIRST: with only the signed row present, the holder must be counted and the removal
+    // allowed. Before F-1 the counter passed no key, so this VERIFIED row still reported UNKEYED in the
+    // production posture, still counted as zero, and this call was refused — the regression pinned here.
+    const selfRemoveVerified = await store.setAdminProfileAccess(app.db(DB), {
+      actorUserId: superUser,
+      profileId: superProfile,
+      isActive: false,
+      now,
+    });
+    hold(
+      "F-1 step 1 of 3: two VERIFIED holders are counted, so removing the actor's access is allowed",
+      selfRemoveVerified.ok === true,
+      JSON.stringify(selfRemoveVerified),
+    );
+
+    // The call above deactivated the actor. Restore it as the OWNER so the next case can act; this
+    // is fixture cleanup, not a bypass of the invariant under test.
+    await attempt(() =>
+      owner.db(DB).collection("admin_profiles").updateOne({ _id: superProfile }, { $set: { isActive: true } }),
+    );
+    const restoredSuper = await owner.db(DB).collection("admin_profiles").findOne({ _id: superProfile });
+    hold("F-1 cleanup: the first super admin is active again", restoredSuper?.isActive === true, JSON.stringify({ isActive: restoredSuper?.isActive }));
+
+    // STEP 2 OF 3 — the discriminating assertion, and the reason this is a three-step sequence.
+    //
+    // Step 1's `ok === true` only proves `remaining >= 1`, because the continuity gate refuses when
+    // `remainingHolders <= 0`. On its own it therefore cannot distinguish "two holders counted" from
+    // "one holder counted": a counter that ignored `thirdProfile` entirely would still satisfy it.
+    // Making exactly ONE of the two remaining holders unverifiable separates the cases — if the count
+    // is genuinely 2 it falls to 1 and the removal is still allowed; if the count was only ever 1 it
+    // falls to 0 and the call below is refused, failing the assertion.
+    //
+    // The row is inserted UNSIGNED — the exact W3.3 vector, and the only way to produce an unverifiable
+    // row here, because the collection's validator refuses an in-place edit of a signed row (an earlier
+    // attempt to tamper `reason` was rejected, which is itself the append-only property working). An
+    // unsigned row is MISSING, so it must not be counted.
+    const unsignedRows = [
+      {
+        _id: randomUUID(),
+        adminId: secondProfile,
+        permission: "ACCESS_GRANT_PERMISSION",
+        effect: "GRANT",
+        seq: Long.fromNumber(9_000),
+        eventId: randomUUID(),
+        grantedById: secondUser,
+        reason: "F-1: unsigned row, must not be counted",
+        expiresAt: null,
+        // MUST be `now`, not later: `readPermissionEvents` filters `createdAt <= now`, so a future
+        // timestamp would be excluded from the read and the signed row would win by default.
+        createdAt: now,
+      },
+    ];
+    const firstUnsignedInsert = await attempt(() =>
+      owner.db(DB).collection(store.GRANTS_COLLECTION).insertMany(unsignedRows),
+    );
+    hold(
+      "F-1 step 2 setup: an unsigned row is the newest event for the first remaining holder",
+      !firstUnsignedInsert.refused,
+      firstUnsignedInsert.message,
+    );
+
+    const selfRemoveOneUnverified = await store.setAdminProfileAccess(app.db(DB), {
+      actorUserId: superUser,
+      profileId: superProfile,
+      isActive: false,
+      now,
+    });
+    hold(
+      "F-1 step 2 of 3: one UNVERIFIABLE holder still leaves one VERIFIED holder, so the removal is still allowed",
+      selfRemoveOneUnverified.ok === true,
+      JSON.stringify(selfRemoveOneUnverified),
+    );
+
+    // Step 2 succeeded, so it deactivated the actor again. Restore it as the OWNER before step 3.
+    await attempt(() =>
+      owner.db(DB).collection("admin_profiles").updateOne({ _id: superProfile }, { $set: { isActive: true } }),
+    );
+
+    // STEP 3 OF 3 — both remaining holders unverifiable. The count is now genuinely 0, so the identical
+    // operation must be refused. Read together with step 2 this is a real negative control; on its own
+    // it would also pass with a count of 1, which is why step 2 exists.
+    const secondUnsignedRow = {
+      _id: randomUUID(),
+      adminId: thirdProfile,
+      permission: "ACCESS_GRANT_PERMISSION",
+      effect: "GRANT",
+      seq: Long.fromNumber(9_001),
+      eventId: randomUUID(),
+      grantedById: thirdUser,
+      reason: "F-1: unsigned row for the second remaining holder, must not be counted",
+      expiresAt: null,
+      createdAt: now,
+    };
+    unsignedRows.push(secondUnsignedRow);
+    const secondUnsignedInsert = await attempt(() =>
+      owner.db(DB).collection(store.GRANTS_COLLECTION).insertMany([secondUnsignedRow]),
+    );
+    hold(
+      "F-1 step 3 setup: an unsigned row is the newest event for the other remaining holder too",
+      !secondUnsignedInsert.refused,
+      secondUnsignedInsert.message,
+    );
+
+    const selfRemoveUnverified = await store.setAdminProfileAccess(app.db(DB), {
+      actorUserId: superUser,
+      profileId: superProfile,
+      isActive: false,
+      now,
+    });
+    hold(
+      "F-1 step 3 of 3: no VERIFIED holder remains, so the same removal is refused with LAST_SUPER_ADMIN",
+      selfRemoveUnverified.ok === false && selfRemoveUnverified.refusal === "LAST_SUPER_ADMIN",
+      JSON.stringify(selfRemoveUnverified),
+    );
+
+    // Remove ONLY the rows this test inserted, so the fixture is left as the rest of the suite expects it.
+    await attempt(() =>
+      owner.db(DB)
+        .collection(store.GRANTS_COLLECTION)
+        .deleteMany({ _id: { $in: unsignedRows.map((row) => row._id) } }),
+    );
+    const superStillActive = await owner.db(DB).collection("admin_profiles").findOne({ _id: superProfile });
+    hold("F-1 cleanup: the refused removal left the first super admin active", superStillActive?.isActive === true, JSON.stringify({ isActive: superStillActive?.isActive }));
+
+    if (previousPrimemetEnv === undefined) delete process.env.PRIMEMET_ENV;
+    else process.env.PRIMEMET_ENV = previousPrimemetEnv;
+    if (savedKey === undefined) delete process.env.PERMISSION_LOG_KEY;
+    else process.env.PERMISSION_LOG_KEY = savedKey;
+
+    // ---------------------------------------------------------------------
     // 5. Q4 — unauthorised identities are rejected by MongoDB itself
     // ---------------------------------------------------------------------
     process.stdout.write(`\n5. Q4 \u2014 MongoDB rejects what the roles do not grant\n`);

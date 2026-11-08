@@ -29,6 +29,7 @@ import {
   type GrantEffect,
 } from "./types.ts";
 import { verifyEventIntegrity, type TaggedEvent } from "./integrity.ts";
+import { permissionIntegrityPosture } from "../env.ts";
 
 /** Why no permission was returned at all. Every value is a fail-closed outcome. */
 export type DenialReason =
@@ -222,8 +223,29 @@ export interface ResolveOptions {
    * verification is disabled — the posture for unit tests and for a deployment that has not yet been
    * provisioned with a key. Omission is never reported as sound: no row is marked VALID, and the caller
    * gets `integrityDiagnostics: []` because nothing was checkable, not because nothing was wrong.
+   *
+   * P2 changed what "omitted" means in production. `UNKEYED` used to be the one verdict that did not
+   * fail, so an unkeyed production deployment honoured a hand-written, validator-conforming GRANT — W3.3.
+   * It is now a failure in production; see `requireIntegrity`.
    */
   integrityKey?: string | null;
+  /**
+   * Treat `UNKEYED` as a failed integrity tag.
+   *
+   * Defaults to `permissionIntegrityPosture() === "production"`: production when `PRIMEMET_ENV=production`,
+   * or when `PRIMEMET_ENV` is undeclared and `NODE_ENV=production` (F-2b) — so a production process that
+   * never declared its environment still refuses an unsigned permission event. `env.ts` independently
+   * refuses database access without the key, and `check:env-blank` asserts that; this option is the
+   * defence in depth for a caller that reaches the resolver by another route.
+   *
+   * Outside production `UNKEYED` is tolerated, so staging and development honour unsigned rows (F-5).
+   * That is deliberate — local work needs to run without a key — but it means a pre-production
+   * environment does not exercise the production posture, and must not be described as if it did.
+   *
+   * Left overridable so the test suites can exercise both postures in one process without mutating
+   * `process.env`.
+   */
+  requireIntegrity?: boolean;
 }
 
 export function resolveAdminPermissions(
@@ -238,6 +260,11 @@ export function resolveAdminPermissions(
   const tier = actor?.profile?.tier ?? "";
   const nowMs = now.getTime();
   const adminId = actor?.profile?.id;
+
+  // P2. In production an unverifiable row must not decide access, and "no key configured" is exactly the
+  // condition W3.3 exploited. Resolved once per call rather than per row so the posture cannot vary
+  // within a resolution.
+  const requireIntegrity = options.requireIntegrity ?? permissionIntegrityPosture() === "production";
 
   // 2. Project the explicit events: only rows for this admin, already in force at `now`, and not expired.
   type Candidate = {
@@ -268,7 +295,8 @@ export function resolveAdminPermissions(
     if (row.expiresAt !== null && row.expiresAt !== undefined && expiresAt === null) continue;
 
     const verdict = verifyEventIntegrity(row as unknown as TaggedEvent, options.integrityKey ?? null);
-    const integrityFailed = verdict === "MISSING" || verdict === "INVALID";
+    const integrityFailed =
+      verdict === "MISSING" || verdict === "INVALID" || (verdict === "UNKEYED" && requireIntegrity);
     candidates.push({
       permission: row.permission,
       effect: row.effect,

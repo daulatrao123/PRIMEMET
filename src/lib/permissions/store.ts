@@ -478,7 +478,20 @@ async function countRemainingGrantHolders(
       profile: { id: profile._id, isActive: true, tier: "SUPER_ADMIN" },
       org: { id: "probe", orgKind: "PRIMEMET", accountStatus: "ACTIVE" },
     };
-    if (resolveAdminPermissions(actor, events, now).allowed.has("ACCESS_GRANT_PERMISSION")) holders += 1;
+    // F-1. The key must be passed here for the same reason `resolveActorPermissions` passes it: without
+    // it every stored row reports `UNKEYED`, and P2 made `UNKEYED` a failure in the production posture.
+    // A holder with NO recorded event still counted, from the tier default, which is why this stayed
+    // invisible; a holder WITH an event did not, because an unverifiable newest row resolves to
+    // INVALID_EVENT rather than falling back to the tier. So the counter under-reported in production
+    // whenever a super admin had ever had an access event, and the consequence was a false refusal:
+    // removing the last such holder was rejected as LAST_SUPER_ADMIN. Fail-closed, but wrong.
+    if (
+      resolveAdminPermissions(actor, events, now, { integrityKey: permissionLogKey() }).allowed.has(
+        "ACCESS_GRANT_PERMISSION",
+      )
+    ) {
+      holders += 1;
+    }
   }
   return holders;
 }
