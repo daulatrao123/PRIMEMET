@@ -74,6 +74,7 @@ export type PublicRoute = {
  */
 const STATIC_PUBLIC_ROUTES: PublicRoute[] = [
   { path: "/", changeFrequency: "monthly", priority: 1 },
+  { path: "/products", changeFrequency: "daily", priority: 0.9 },
   { path: "/scrap-metals", changeFrequency: "monthly", priority: 0.9 },
   { path: "/spare-parts", changeFrequency: "monthly", priority: 0.9 },
   { path: "/request-a-quote", changeFrequency: "monthly", priority: 0.9 },

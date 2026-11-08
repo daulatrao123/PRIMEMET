@@ -116,6 +116,21 @@ function assert(name, condition, detail) {
   else bad(name, detail);
 }
 
+/**
+ * Public pages that are rendered per request rather than prerendered.
+ *
+ * `/products` reads the live catalogue from MongoDB, so a prerendered HTML file cannot exist for it: a
+ * build must never bake yesterday's catalogue into today's page. In artefact mode this check therefore
+ * skips its markup assertions and says so, while still requiring it in the sitemap and out of every
+ * private prefix. Its real behaviour (200, filters, pagination, published-only) is asserted over HTTP by
+ * `npm run verify:m2`, which is the mode that can actually observe a database-backed page.
+ */
+const DYNAMIC_PUBLIC_PATHS = new Set(["/products"]);
+
+function isDynamic(path) {
+  return DYNAMIC_PUBLIC_PATHS.has(path);
+}
+
 function artefactFor(path) {
   const clean = path.replace(/^\/+/, "").replace(/\/+$/, "");
   if (clean === "") return { file: join(BUILD_DIR, "index.html") };
@@ -285,6 +300,10 @@ const jsonLdTypes = new Map();
 const publicPages = [...expected].sort();
 
 for (const path of publicPages) {
+  if (isDynamic(path) && !SERVER_BASE) {
+    console.log(`skip page ${path}: server-rendered on demand — markup is asserted by verify:m2 over HTTP`);
+    continue;
+  }
   const page = await fetchText(path);
   assert(`page ${path}: 200`, page.status === 200, String(page.status));
   if (page.status !== 200) continue;
@@ -422,11 +441,39 @@ for (const path of ["/scrap-metals", "/scrap-metals/heavy-melting-scrap", "/spar
 /* 6. Non-public areas                                                 */
 /* ------------------------------------------------------------------ */
 
-for (const path of ["/admin/dashboard", "/buyer/dashboard", "/seller/dashboard", "/login", "/admin/login", "/register/buyer"]) {
+for (const path of ["/login", "/admin/login", "/register/buyer"]) {
   const page = await fetchText(path);
   assert(`noindex ${path}: 200`, page.status === 200, String(page.status));
   const robotsMeta = metaContents(head(page.body), "name", "robots").join(",");
   assert(`noindex ${path}: marked noindex`, /noindex/.test(robotsMeta), robotsMeta || "none");
+}
+
+/**
+ * From M5 the admin area is gated as a whole: the layout re-reads the session from the database, so no
+ * admin screen has a prerendered artefact and an anonymous request is redirected to /admin/login. The
+ * noindex metadata still applies to every admin route; it is asserted there by the build's route
+ * manifest rather than by fetching an artefact that must not exist.
+ */
+
+/**
+ * /buyer/dashboard now requires a session, so it is rendered per request and has no prerendered artefact.
+ * Asserting a robots meta on a page no anonymous visitor can see would be theatre: what has to hold is that
+ * it is not advertised in the sitemap, that an anonymous request is sent to sign-in rather than served, and
+ * that the sign-in page it lands on is itself noindex (asserted above).
+ */
+/**
+ * The seller portal is gated in exactly the same way as the buyer portal from M4 onwards: every page
+ * requires a SELLER session, so an anonymous visitor is sent to sign-in rather than served the page.
+ */
+for (const path of ["/buyer/dashboard", "/seller/dashboard", "/seller/products", "/admin/dashboard"]) {
+  assert("gated " + path + ": absent from the sitemap", !publicPages.includes(path));
+  const gated = await fetchText(path);
+  if (SERVER_BASE) {
+    assert("gated " + path + ": anonymous request redirected to sign-in",
+      [302, 303, 307].includes(gated.status), String(gated.status));
+  } else {
+    assert("gated " + path + ": no prerendered artefact to index", gated.status === 404, String(gated.status));
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -439,6 +486,7 @@ assert("unknown route returns 404", unknown.status === 404, String(unknown.statu
 // Every sitemap URL is reachable — the sitemap must not advertise a dead page.
 let dead = 0;
 for (const path of publicPages) {
+  if (isDynamic(path) && !SERVER_BASE) continue;
   const res = await fetchText(path);
   if (res.status !== 200) dead += 1;
 }
