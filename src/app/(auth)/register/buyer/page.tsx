@@ -1,22 +1,25 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AuthNotice, AuthShell } from "@/components/auth/auth-shell";
+import { AuthNotice } from "@/components/auth/auth-notice";
+import { AuthShell } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
-import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
+import { Field, Input, Textarea } from "@/components/ui/input";
 
 export const metadata: Metadata = {
   title: "Register as a buyer",
-  description: "Buyer registration preview for PRIMEMET industrial scrap sourcing and spare-parts procurement.",
+  description: "Open a PRIMEMET buyer account to enquire about industrial scrap and spare parts.",
+  robots: { index: false, follow: false },
 };
 
+
 /**
- * Buyer registration preview.
- * No account is created: the form has no action and the submit button is disabled.
+ * Buyer registration.
  *
- * TODO (Stage 2): create the User + BuyerProfile records in a transaction, send email
- * verification, then hand the applicant to admin review before activating the account.
+ * The account is created, activated and signed in by `/api/auth/register`. GSTIN is captured, not
+ * verified: the profile records it as PENDING and only an admin decision can move that state.
  */
 export default function RegisterBuyerPage() {
+
   return (
     <AuthShell
       eyebrow="Buyer registration"
@@ -36,45 +39,31 @@ export default function RegisterBuyerPage() {
         </p>
       }
     >
-      <form className="space-y-5">
-        <AuthNotice>
-          Registration is a layout preview. No account record is created and nothing entered here
-          is submitted, stored or emailed.
-        </AuthNotice>
+      <form method="post" action="/api/auth/register" className="space-y-5">
+        <input type="hidden" name="role" value="BUYER" />
+        <AuthNotice />
 
         <div className="grid gap-5 sm:grid-cols-2">
           <Field label="Company" htmlFor="buyer-company">
-            <Input id="buyer-company" name="company" placeholder="Registered business name" autoComplete="organization" />
+            <Input id="buyer-company" name="company" placeholder="Registered business name" autoComplete="organization" required maxLength={240} />
           </Field>
-          <Field label="Country" htmlFor="buyer-country">
-            <Input id="buyer-country" name="country" placeholder="Country of operation" autoComplete="country-name" />
+          <Field label="City" htmlFor="buyer-city">
+            <Input id="buyer-city" name="city" placeholder="City of operation" autoComplete="address-level2" maxLength={120} />
           </Field>
           <Field label="Contact name" htmlFor="buyer-name">
-            <Input id="buyer-name" name="name" placeholder="Full name" autoComplete="name" />
-          </Field>
-          <Field label="Role at company" htmlFor="buyer-role">
-            <Input id="buyer-role" name="jobTitle" placeholder="e.g. Procurement manager" autoComplete="organization-title" />
+            <Input id="buyer-name" name="contactName" placeholder="Full name" autoComplete="name" required maxLength={200} />
           </Field>
           <Field label="Work email" htmlFor="buyer-email">
-            <Input id="buyer-email" name="email" type="email" placeholder="name@company.com" autoComplete="email" />
+            <Input id="buyer-email" name="email" type="email" placeholder="name@company.com" autoComplete="email" required maxLength={320} />
           </Field>
           <Field label="Telephone" htmlFor="buyer-phone">
-            <Input id="buyer-phone" name="phone" type="tel" placeholder="+00 000 000 000" autoComplete="tel" />
+            <Input id="buyer-phone" name="phone" type="tel" placeholder="+91 00000 00000" autoComplete="tel" maxLength={40} />
           </Field>
-          <Field label="Primary interest" htmlFor="buyer-interest" className="sm:col-span-2">
-            <Select id="buyer-interest" name="interest" defaultValue="">
-              <option value="" disabled>
-                Select what you source most often
-              </option>
-              <option>Ferrous scrap</option>
-              <option>Non-ferrous scrap</option>
-              <option>Stainless and alloys</option>
-              <option>Industrial spare parts</option>
-              <option>A mix of the above</option>
-            </Select>
+          <Field label="GSTIN" htmlFor="buyer-gstin" hint="Optional. Recorded as pending until the desk verifies it.">
+            <Input id="buyer-gstin" name="gstin" placeholder="27ABCDE1234F1Z5" maxLength={15} />
           </Field>
-          <Field label="Password" htmlFor="buyer-password">
-            <Input id="buyer-password" name="password" type="password" placeholder="Choose a password" autoComplete="new-password" />
+          <Field label="Password" htmlFor="buyer-password" hint="At least 10 characters with a letter and a number.">
+            <Input id="buyer-password" name="password" type="password" placeholder="Choose a password" autoComplete="new-password" required minLength={10} maxLength={200} />
           </Field>
           <Field label="Confirm password" htmlFor="buyer-password-confirm">
             <Input
@@ -83,6 +72,9 @@ export default function RegisterBuyerPage() {
               type="password"
               placeholder="Repeat the password"
               autoComplete="new-password"
+              required
+              minLength={10}
+              maxLength={200}
             />
           </Field>
           <Field label="What do you need sourced?" htmlFor="buyer-notes" className="sm:col-span-2" hint="Optional — helps the desk route your first enquiry">
@@ -90,18 +82,13 @@ export default function RegisterBuyerPage() {
               id="buyer-notes"
               name="notes"
               placeholder="Grades or part categories you buy regularly, and the delivery region you operate in."
+              maxLength={2000}
             />
           </Field>
         </div>
 
-        <Checkbox
-          id="buyer-terms"
-          label="I accept the Terms and Conditions and understand that account activation is subject to PRIMEMET review."
-        />
-
-        <Button type="button" disabled className="w-full">
+        <Button type="submit" className="w-full">
           Create buyer account
-          <span className="font-normal opacity-80">(preview)</span>
         </Button>
       </form>
     </AuthShell>

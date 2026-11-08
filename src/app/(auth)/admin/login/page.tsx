@@ -1,30 +1,32 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AuthNotice, AuthShell } from "@/components/auth/auth-shell";
+import { AuthNotice, NextField } from "@/components/auth/auth-notice";
+import { AuthShell } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
-import { Field, Input, Select } from "@/components/ui/input";
+import { Field, Input } from "@/components/ui/input";
 
 export const metadata: Metadata = {
   title: "Administrator sign in",
-  description: "PRIMEMET administrator sign-in preview. Accounts are not enabled yet.",
+  description: "PRIMEMET staff sign-in.",
+  robots: { index: false, follow: false, nocache: true },
 };
 
+
 /**
- * Admin sign-in preview.
- * Lives outside the /admin directory on purpose, so the admin dashboard layout does
- * not wrap the sign-in screen.
+ * Staff sign-in.
  *
- * TODO (Stage 2): restrict this route to the ADMIN role, rate-limit attempts and
- * redirect to /admin/dashboard on success. Until then the admin area is reachable
- * directly, which is why every admin screen carries the preview label.
+ * Lives outside `/admin` so the admin layout (and its session guard) does not wrap it. The role check is
+ * still enforced twice: middleware treats this path as public, and the login route refuses a non-ADMIN
+ * account with the "staff only" message.
  */
 export default function AdminLoginPage() {
+
   return (
     <AuthShell
       variant="admin"
       eyebrow="Administrator"
       title="PRIMEMET admin sign-in"
-      description="Internal desk access for enquiry review, supplier qualification, quotation comparison and catalogue maintenance."
+      description="Internal desk access for enquiry review, supplier qualification and catalogue maintenance."
       footer={
         <div className="space-y-3 text-sm text-steel-600">
           <p>
@@ -35,24 +37,25 @@ export default function AdminLoginPage() {
             .
           </p>
           <p className="text-xs leading-5 text-steel-500">
-            Administrator access will be restricted by role in Stage 2. This page creates no session.
+            Every admin action is recorded in the audit trail against your account.
           </p>
         </div>
       }
     >
-      <form className="space-y-5">
-        <AuthNotice>
-          Role-based access control is not implemented. Submitting this form is disabled and no
-          session is created.
-        </AuthNotice>
+      <form method="post" action="/api/auth/login" className="space-y-5">
+        <input type="hidden" name="area" value="admin" />
+        <AuthNotice />
+        <NextField />
 
         <Field label="Work email" htmlFor="admin-email">
           <Input
             id="admin-email"
             name="email"
             type="email"
-            placeholder="name@primemet.com"
+            placeholder="name@company.com"
             autoComplete="username"
+            required
+            maxLength={320}
           />
         </Field>
 
@@ -63,24 +66,13 @@ export default function AdminLoginPage() {
             type="password"
             placeholder="Your password"
             autoComplete="current-password"
+            required
+            maxLength={200}
           />
         </Field>
 
-        <Field label="Desk" htmlFor="admin-desk" hint="Recorded against audit-log entries once Stage 2 is live">
-          <Select id="admin-desk" name="desk" defaultValue="">
-            <option value="" disabled>
-              Select a desk
-            </option>
-            <option>Sourcing desk</option>
-            <option>Supplier desk</option>
-            <option>Quotations</option>
-            <option>Administration</option>
-          </Select>
-        </Field>
-
-        <Button type="button" disabled className="w-full">
-          Sign in as administrator
-          <span className="font-normal opacity-80">(preview)</span>
+        <Button type="submit" className="w-full">
+          Sign in
         </Button>
       </form>
     </AuthShell>

@@ -78,8 +78,8 @@ export function AuthShell({
         </div>
 
         <div className="relative border-t border-white/10 pt-6 text-xs leading-5 text-steel-400">
-          Preview build — accounts and sessions are not enabled. Nothing entered on this page is
-          stored or sent.
+          PRIMEMET — managed industrial sourcing. Supplier costs, identities and margins stay internal to
+          the PRIMEMET desk.
         </div>
       </div>
 
@@ -89,7 +89,7 @@ export function AuthShell({
             <span className="text-sm font-semibold tracking-[0.18em] text-navy-950">PRIMEMET</span>
           </Link>
           <div className="flex items-center gap-3 lg:ml-auto">
-            <Badge tone="steel">Preview build</Badge>
+            <Badge tone="steel">Secure sign-in</Badge>
             <Link
               href="/"
               className="text-xs font-medium text-steel-600 transition-colors hover:text-navy-950"
