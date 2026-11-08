@@ -1,78 +1,32 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { PortalShell } from "@/components/portal/portal-shell";
-import type { NavGroup } from "@/components/portal/side-nav";
-
-const NAV: NavGroup[] = [
-  { heading: "Overview", items: [{ href: "/admin/dashboard", label: "Dashboard" }] },
-  {
-    heading: "Desk",
-    items: [
-      { href: "/admin/enquiries", label: "Enquiries" },
-      { href: "/admin/suppliers", label: "Suppliers" },
-      { href: "/admin/buyers", label: "Buyers" },
-    ],
-  },
-  {
-    heading: "Catalogues",
-    items: [
-      { href: "/admin/materials", label: "Materials" },
-      { href: "/admin/products", label: "Products" },
-      { href: "/admin/pricing", label: "Pricing & formulas" },
-    ],
-  },
-  {
-    heading: "Catalogue & QA",
-    items: [
-      { href: "/admin/catalogue", label: "Categories & grades" },
-      { href: "/admin/catalogue/materials", label: "Material catalogue" },
-      { href: "/admin/composition", label: "Composition specs" },
-      { href: "/admin/lots", label: "Scrap lots" },
-      { href: "/admin/inspections", label: "Quality & inspection" },
-      { href: "/admin/rejections", label: "Rejections" },
-    ],
-  },
-  {
-    heading: "Quotations",
-    items: [
-      { href: "/admin/supplier-quotations", label: "Supplier quotations" },
-      { href: "/admin/quotations", label: "Customer quotations" },
-    ],
-  },
-  {
-    heading: "Oversight",
-    items: [
-      { href: "/admin/reports", label: "Reports" },
-      { href: "/admin/audit-log", label: "Audit log" },
-    ],
-  },
-];
+import { requireAdminPage } from "@/lib/auth/guards";
+import { ADMIN_NAV } from "@/lib/content/admin-nav";
 
 /**
- * The admin portal must never be indexed.
+ * The admin area is never indexed and never rendered for a non-administrator.
  *
- * Every screen here is an example layout waiting for Stage 2 authentication. Indexing them would
- * publish empty administrative pages. `robots.ts` disallows `/admin`, but `Disallow` stops crawling,
- * not indexing — a linked, disallowed URL can still appear in results. This `noindex` is the part
- * that actually keeps it out, so the two policies work together.
+ * TWO GUARDS, DELIBERATELY. `middleware.ts` refuses an anonymous request from the HMAC on the session
+ * cookie before any component runs. That is a routing hint, not an identity: it cannot see a revoked
+ * session or a suspended account. `requireAdminPage` here re-reads the session row, the user status and
+ * the role from MongoDB, so every screen under `/admin` — including the older preview pages that have no
+ * data of their own — is behind a real decision. Pages keep their own guard as well: a layout protects
+ * what it wraps, and a future route group might not.
  *
- * TODO (Stage 2): replace with a guard that requires an ADMIN session. Removing `noindex` is only
- * correct once this area holds real, authenticated content.
+ * `dynamic` is forced because the guard reads the request's cookie. A prerendered admin page would be a
+ * page built without a session, which is precisely the artefact that must not exist.
  */
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true },
 };
 
-/**
- * Admin shell.
- * No guard is applied: the area is open in Stage 1 so the interface can be reviewed.
- *
- * TODO (Stage 2): require an ADMIN session here (middleware.ts marks the same point)
- * and redirect unauthenticated visitors to /admin/login.
- */
-export default function AdminLayout({ children }: { children: ReactNode }) {
+export default async function AdminLayout({ children }: { children: ReactNode }) {
+  await requireAdminPage("/admin/dashboard");
   return (
-    <PortalShell roleLabel="Administrator" signInHref="/admin/login" nav={NAV}>
+    <PortalShell roleLabel="Administrator" signInHref="/admin/login" nav={ADMIN_NAV}>
       {children}
     </PortalShell>
   );
