@@ -1,0 +1,144 @@
+name: Initialize MongoDB
+
+# One-time, idempotent database initialization.
+#
+# Triggers, deliberately narrow:
+#   - push to main        (the approved branch)
+#   - manual dispatch     (re-run after an incident, or to reconcile validators/indexes)
+#
+# It does NOT run on every deployment. Vercel builds never touch the database: the Next.js app has no
+# initialization code path, and this workflow is the only thing that creates collections, validators
+# or indexes. A Vercel deploy therefore cannot recreate, reset or drop anything.
+#
+# Safety properties, each enforced rather than assumed:
+#   - concurrency group   → two runs can never race on collection creation or the ledger
+#   - environment gate    → configure `production-database` with required reviewers in repository
+#                           settings to make "approved push" a human approval, not just a branch name
+#   - ledger check        → `--status` prints what is already applied before anything is written
+#   - idempotent runner   → already-applied versions are skipped; nothing is dropped or deleted
+#   - secret handling     → MONGODB_URI comes from secrets and is never echoed; the CLI redacts the
+#                           URI in every log line it prints
+#   - explicit target     → the database name comes from `vars.MONGODB_DB` with NO fallback, and the
+#                           write step declares `PRIMEMET_ENV=production`. `scripts/db-guard.mjs`
+#                           refuses to guess a name (rule 1) and refuses a write with no environment
+#                           declared (rule 3), so a missing variable fails this job instead of quietly
+#                           aiming it at the production database
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "db/**"
+      - "scripts/db-init.mjs"
+      - "scripts/gen-mongo-enums.mjs"
+      - "prisma/schema.prisma"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/db-init.yml"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report pending migrations without writing anything"
+        type: boolean
+        default: false
+      reconcile:
+        description: "Re-apply validators and indexes even if the ledger is current"
+        type: boolean
+        default: false
+
+# Never run two initializations at once.
+concurrency:
+  group: mongodb-initialization
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  initialize:
+    name: Initialize and verify the database
+    runs-on: ubuntu-latest
+    environment: production-database
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Confirm the connection secret is present
+        # Presence only. The value is never printed, and GitHub masks secrets in logs regardless.
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: |
+          if [ -z "$MONGODB_URI" ]; then
+            echo "::error::MONGODB_URI is not set in this repository's secrets."
+            exit 1
+          fi
+          echo "MONGODB_URI is configured (value withheld)."
+
+      - name: Confirm the database name is configured
+        # Presence only — a database name is not a secret. There is deliberately no `|| 'primemet'`
+        # fallback here or in any step below: an unset name used to resolve to the production database,
+        # which is how a run with one missing variable migrated production instead of its own target.
+        env:
+          MONGODB_DB: ${{ vars.MONGODB_DB }}
+        run: |
+          if [ -z "$MONGODB_DB" ]; then
+            echo "::error::The repository variable MONGODB_DB is not set. Set it explicitly for the production-database environment (primemet). No default is applied."
+            exit 1
+          fi
+          echo "MONGODB_DB is configured: $MONGODB_DB"
+
+      - name: Read the migration ledger before changing anything
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGODB_DB: ${{ vars.MONGODB_DB }}
+        run: node scripts/db-init.mjs --status
+
+      - name: Apply pending migrations
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGODB_DB: ${{ vars.MONGODB_DB }}
+          # Guard rule 3: a write may not run with the environment undeclared. This job targets the
+          # production database behind the required-reviewer `production-database` environment gate,
+          # so it declares that identity rather than leaving the guard to infer it.
+          PRIMEMET_ENV: production
+          DB_INIT_ACTOR: github-actions
+        run: |
+          ARGS=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          if [ "${{ inputs.reconcile }}" = "true" ]; then ARGS="$ARGS --reconcile"; fi
+          node scripts/db-init.mjs $ARGS
+
+      - name: Verify collections, indexes and validators
+        if: ${{ inputs.dry_run != true }}
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGODB_DB: ${{ vars.MONGODB_DB }}
+        run: node scripts/db-init.mjs --verify-only
+
+      - name: Record the outcome
+        if: always()
+        env:
+          MONGODB_DB: ${{ vars.MONGODB_DB }}
+        run: |
+          {
+            echo "### MongoDB initialization"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Database | \`$MONGODB_DB\` |"
+            echo "| Trigger | ${{ github.event_name }} |"
+            echo "| Commit | \`${{ github.sha }}\` |"
+            echo "| Dry run | ${{ inputs.dry_run || false }} |"
+            echo "| Result | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,2003 @@
+// PRIMEMET — Prisma schema, Milestone 1 (database schema foundation).
+//
+// Scope: architecture document §28.1 "M1 — Schema" — migrations 1–3, 6, 14, 15, 18, 19.
+// Everything here is transcribed from docs/PRIMEMET_STAGE_2_ARCHITECTURE.md:
+//   §5.1  conventions (uuid PKs, timestamptz, numeric precision, no float)
+//   §5.2  enumerations
+//   §5.3  Group A — identity, organisation and access
+//   §8.3  Group C — catalogue and configurable composition
+//   §8.4  Group D — parties (profiles and standing listings only; lots are M6)
+//   §8.7  Group G — documents, pricing rule sets, audit, migration runs
+//   §15.5 tax tables + D7 (invoice_role is never NULL)
+//   §8.8  location_states — the only geography table M1 needs, because tax_rules references it
+//
+// Deliberately absent: enquiries, supplier quotes, buyer quotes, lots, inspections, approvals,
+// dispatch, rejection, dispute, settlement, orders, invoices, payments, contact sharing, the rest of
+// the geography tree, SEO tables, stock positions/movements. Those are M3–M9 (migration 4, 5, 7–13,
+// 16, 17, 20). Their enums ARE declared here because §24.2 puts every enum in migration 1 and an
+// enum value is append-only (§5.1).
+//
+// Constraint classes Prisma cannot express are applied by hand in
+//   prisma/migrations/20261031000100_m1_constraints/migration.sql
+// — CHECK constraints, partial unique indexes, the btree_gist EXCLUDE constraint, and Prisma's own
+// index-name normalisation. See prisma/README.md.
+//
+// No DATABASE_URL is required to build or run the application. Prisma tooling reads it; the Next.js
+// runtime does not (src/lib/db.ts is lazy and src/app/api/health/route.ts stays "not_configured").
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enumerations — §5.2 and §8.2. Migration 1 content.
+// tax_component_type is deliberately absent: D7 replaced it with tax_components_ref (§5.2).
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  ADMIN
+  BUYER
+  SELLER
+
+  @@map("user_role")
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  DISABLED
+  ARCHIVED
+
+  @@map("user_status")
+}
+
+enum AdminTier {
+  SUPER_ADMIN
+  SOURCING_OPS_ADMIN
+  CATALOGUE_MANAGER
+  READ_ONLY_ADMIN
+
+  @@map("admin_tier")
+}
+
+/// §17.3 — 74 values, resource.action. This section is authoritative; the earlier "42" and "55"
+/// counts in the document are superseded.
+enum AdminPermission {
+  ENQUIRY_VIEW
+  ENQUIRY_CREATE
+  ENQUIRY_EDIT
+  ENQUIRY_CANCEL
+  ENQUIRY_ASSIGN
+  ENQUIRY_CLOSE
+  QUOTE_VIEW
+  QUOTE_PREPARE
+  QUOTE_SUBMIT_FOR_APPROVAL
+  QUOTE_APPROVE
+  QUOTE_SEND
+  QUOTE_REVISE
+  SUPPLIER_QUOTE_REQUEST
+  SUPPLIER_QUOTE_VIEW
+  SUPPLIER_QUOTE_COMPARE
+  LOT_VIEW
+  LOT_CREATE
+  LOT_EDIT_DECLARATION
+  LOT_SCHEDULE_INSPECTION
+  LOT_RECORD_INSPECTION
+  LOT_AUTHORISE_DISPATCH
+  LOT_OVERRIDE_GATE
+  LOT_CLOSE
+  APPROVAL_REQUEST
+  APPROVAL_RECORD
+  REJECTION_RAISE
+  REJECTION_RESOLVE
+  REJECTION_MANAGE_DISPUTE
+  REJECTION_PREPARE_SETTLEMENT
+  REJECTION_APPROVE_SETTLEMENT
+  CONTACT_VIEW_RESTRICTED
+  CONTACT_APPROVE_SHARE
+  CATALOGUE_VIEW
+  CATALOGUE_EDIT
+  CATALOGUE_PUBLISH
+  CATALOGUE_EDIT_COMPOSITION
+  CATALOGUE_APPROVE_COMPOSITION
+  PRICING_EDIT
+  PRICING_APPROVE
+  PRICING_VIEW_INTERNAL
+  TAX_EDIT
+  TAX_APPROVE
+  TAX_VIEW_SNAPSHOT
+  INVOICE_VIEW
+  INVOICE_ISSUE
+  DOCUMENT_VIEW_INTERNAL
+  DOCUMENT_UPLOAD
+  AUDIT_VIEW
+  AUDIT_EXPORT
+  REPORT_VIEW
+  USER_VIEW
+  USER_INVITE
+  USER_SUSPEND
+  ACCESS_ASSIGN_ROLE
+  ACCESS_GRANT_PERMISSION
+  SEO_EDIT
+  SEO_PUBLISH
+  CONTENT_GENERATE
+  CONTENT_REVIEW
+  REDIRECT_MANAGE
+  PARTY_VIEW
+  PARTY_EDIT
+  PARTY_VERIFY
+  PARTY_SUSPEND
+  ORDER_VIEW
+  ORDER_EDIT
+  ORDER_CANCEL
+  NOTIFICATION_VIEW
+  NOTIFICATION_RETRY
+  DATABASE_VIEW_STATUS
+  DATABASE_VIEW_MIGRATIONS
+  DATABASE_VIEW_HISTORY
+  DATABASE_APPLY_MIGRATION
+  DATABASE_VIEW_BACKUP_STATUS
+
+  @@map("admin_permission")
+}
+
+enum OrgType {
+  BUYER
+  SELLER
+  BOTH
+
+  @@map("org_type")
+}
+
+enum VerificationStatus {
+  NOT_SUBMITTED
+  PENDING
+  UNDER_REVIEW
+  VERIFIED
+  REJECTED
+  EXPIRED
+
+  @@map("verification_status")
+}
+
+enum VerificationType {
+  GST
+  PAN
+  CIN
+  TRADE_LICENCE
+  ISO
+  IEC
+  OTHER
+
+  @@map("verification_type")
+}
+
+enum TransactionModel {
+  PRINCIPAL
+  AGENCY
+  MANAGED_SUPPLY
+
+  @@map("transaction_model")
+}
+
+enum EnquiryStatus {
+  NEW
+  UNDER_REVIEW
+  MATCHING_SUPPLIERS
+  QUOTES_REQUESTED
+  QUOTES_RECEIVED
+  COMPARING_QUOTES
+  QUOTE_DRAFTED
+  QUOTE_SENT
+  NEGOTIATION
+  BUYER_SELLER_INTRODUCTION
+  WON
+  LOST
+  CANCELLED
+
+  @@map("enquiry_status")
+}
+
+enum EnquiryPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+
+  @@map("enquiry_priority")
+}
+
+enum EnquirySource {
+  WEB_FORM
+  PHONE
+  EMAIL
+  REFERRAL
+  EXISTING_CUSTOMER
+  ADMIN_ENTRY
+
+  @@map("enquiry_source")
+}
+
+enum SupplierMatchStatus {
+  PROPOSED
+  APPROVED_FOR_RFQ
+  RFQ_SENT
+  QUOTE_RECEIVED
+  DECLINED
+  WITHDRAWN
+  EXCLUDED
+
+  @@map("supplier_match_status")
+}
+
+enum SupplierQuoteStatus {
+  DRAFT
+  SUBMITTED
+  SUPERSEDED
+  WITHDRAWN
+  EXPIRED
+
+  @@map("supplier_quote_status")
+}
+
+enum BuyerQuoteStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SENT
+  VIEWED
+  NEGOTIATION
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  SUPERSEDED
+  CANCELLED
+
+  @@map("buyer_quote_status")
+}
+
+enum ApprovalAction {
+  SUBMIT_FOR_APPROVAL
+  APPROVE
+  REJECT
+  REQUEST_CHANGES
+  WITHDRAW
+
+  @@map("approval_action")
+}
+
+enum ContactShareStatus {
+  REQUESTED
+  APPROVED
+  DENIED
+  REVOKED
+  EXPIRED
+
+  @@map("contact_share_status")
+}
+
+enum ContactShareScope {
+  PARTY_NAME
+  CONTACT_PERSON
+  EMAIL
+  PHONE
+  ADDRESS
+  ALL_CONTACT
+
+  @@map("contact_share_scope")
+}
+
+enum PricingRuleStatus {
+  DRAFT
+  TESTING
+  PENDING_APPROVAL
+  ACTIVE
+  RETIRED
+
+  @@map("pricing_rule_status")
+}
+
+enum PricingComponentType {
+  BASE_RATE
+  GRADE_ADJUSTMENT
+  CONTAMINATION_DEDUCTION
+  QUANTITY_ADJUSTMENT
+  LOCATION_ADJUSTMENT
+  FREIGHT
+  HANDLING
+  LOADING
+  PACKAGING
+  TESTING
+  MARGIN
+  COMMISSION
+  DISCOUNT
+  SURCHARGE
+  ROUNDING
+  MIN_ORDER_ADJUSTMENT
+
+  @@map("pricing_component_type")
+}
+
+enum ChargeParty {
+  PURCHASE
+  SALE
+  BOTH
+
+  @@map("charge_party")
+}
+
+/// Part A's general visibility enum. document_visibility is the document-specific one (§5.2).
+enum Visibility {
+  INTERNAL
+  BUYER_VISIBLE
+  SUPPLIER_VISIBLE
+
+  @@map("visibility")
+}
+
+enum TaxRuleStatus {
+  DRAFT
+  ACTIVE
+  RETIRED
+
+  @@map("tax_rule_status")
+}
+
+enum TaxBaseRule {
+  GOODS_VALUE
+  SERVICE_VALUE
+  COMMISSION_VALUE
+  FREIGHT_VALUE
+  GOODS_PLUS_FREIGHT
+  TAXABLE_SUBTOTAL
+
+  @@map("tax_base_rule")
+}
+
+enum TaxAppliesTo {
+  PURCHASE
+  SALE
+  BOTH
+
+  @@map("tax_applies_to")
+}
+
+enum OrderStatus {
+  DRAFT
+  CONFIRMED
+  SOURCING
+  READY_TO_DISPATCH
+  IN_TRANSIT
+  DELIVERED
+  INVOICED
+  CLOSED
+  CANCELLED
+
+  @@map("order_status")
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  WAIVED
+
+  @@map("payment_status")
+}
+
+enum PaymentDirection {
+  RECEIVABLE
+  PAYABLE
+
+  @@map("payment_direction")
+}
+
+enum CostType {
+  SUPPLIER_PURCHASE
+  INBOUND_FREIGHT
+  HANDLING
+  EXPENSE
+  COMMISSION
+  OTHER
+
+  @@map("cost_type")
+}
+
+enum ShipmentStatus {
+  PLANNED
+  DISPATCHED
+  IN_TRANSIT
+  DELIVERED
+  FAILED
+  RETURNED
+
+  @@map("shipment_status")
+}
+
+enum ListingStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  EXPIRED
+  WITHDRAWN
+
+  @@map("listing_status")
+}
+
+enum ProductCondition {
+  NEW
+  REFURBISHED
+  USED
+  UNKNOWN
+
+  @@map("product_condition")
+}
+
+enum DocumentType {
+  GST_CERTIFICATE
+  PAN_CARD
+  TRADE_LICENCE
+  ISO_CERTIFICATE
+  ENQUIRY_ATTACHMENT
+  SUPPLIER_QUOTE_ATTACHMENT
+  PURCHASE_ORDER
+  SALES_INVOICE
+  PURCHASE_INVOICE
+  WEIGHMENT_SLIP
+  TEST_REPORT
+  EWAY_BILL
+  OTHER
+
+  @@map("document_type")
+}
+
+enum DocumentVisibility {
+  INTERNAL
+  BUYER_VISIBLE
+  SUPPLIER_VISIBLE
+
+  @@map("document_visibility")
+}
+
+enum ScanStatus {
+  PENDING
+  CLEAN
+  INFECTED
+  FAILED
+
+  @@map("scan_status")
+}
+
+enum EmailStatus {
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+  BOUNCED
+  SUPPRESSED
+  CANCELLED
+
+  @@map("email_status")
+}
+
+enum AuditSeverity {
+  INFO
+  NOTICE
+  WARNING
+  CRITICAL
+
+  @@map("audit_severity")
+}
+
+enum CategoryKind {
+  SCRAP
+  SPARE_PARTS
+
+  @@map("category_kind")
+}
+
+enum PublicationState {
+  PUBLISHED
+  DRAFT
+  ARCHIVED
+
+  @@map("publication_state")
+}
+
+enum PriceMode {
+  FIXED
+  REQUEST
+  BULK_TIERED
+
+  @@map("price_mode")
+}
+
+enum CompositionBasis {
+  MIN
+  MAX
+  TARGET
+  RANGE
+
+  @@map("composition_basis")
+}
+
+enum CompositionUnit {
+  PERCENT
+  PPM
+  MM
+  MICRON
+  COUNT
+  RATIO
+
+  @@map("composition_unit")
+}
+
+enum InspectionMethod {
+  VISUAL
+  CHEMICAL_ASSAY
+  XRF
+  LABORATORY
+  MOISTURE
+  CONTAMINATION
+  FOREIGN_MATERIAL
+  WEIGHT_VERIFICATION
+  DIMENSIONAL
+  PHOTO_DOCUMENTATION
+
+  @@map("inspection_method")
+}
+
+enum InspectionRecommendation {
+  PENDING
+  ACCEPT
+  REJECT
+  REINSPECT
+
+  @@map("inspection_recommendation")
+}
+
+enum BuyerApprovalState {
+  NOT_SHARED
+  AWAITING_REVIEW
+  APPROVED
+  APPROVED_WITH_TOLERANCE
+  REJECTED
+  FURTHER_INSPECTION_REQUESTED
+
+  @@map("buyer_approval_state")
+}
+
+enum LotStage {
+  SUPPLIER_SUBMISSION
+  INSPECTION
+  BUYER_REVIEW
+  COMMERCIAL_CONFIRMATION
+  DISPATCH_AUTHORISATION
+  DESTINATION_INSPECTION
+  CLOSED
+
+  @@map("lot_stage")
+}
+
+enum DispatchState {
+  NOT_READY
+  BLOCKED
+  AUTHORISED
+  DISPATCHED
+  DELIVERED
+
+  @@map("dispatch_state")
+}
+
+enum RejectionReason {
+  GRADE_MISMATCH
+  COMPOSITION_OUT_OF_SPEC
+  CONTAMINATION_EXCESS
+  MOISTURE_EXCESS
+  FOREIGN_MATERIAL
+  WEIGHT_SHORTFALL
+  DOCUMENTATION_DEFICIENT
+  LATE_DELIVERY
+  DAMAGE_IN_TRANSIT
+  OTHER
+
+  @@map("rejection_reason")
+}
+
+enum ResolutionOption {
+  ACCEPT_WITH_DEDUCTION
+  RETURN_TO_SUPPLIER
+  REPLACE_LOT
+  REGRADE_AND_RENEGOTIATE
+  REINSPECT_JOINTLY
+  REJECT_AND_REFUND
+
+  @@map("resolution_option")
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  AWAITING_COUNTERPARTY
+  RESOLVED
+  WITHDRAWN
+  ESCALATED
+
+  @@map("dispute_status")
+}
+
+enum SettlementStatus {
+  PENDING
+  PARTIALLY_SETTLED
+  SETTLED
+  WRITTEN_OFF
+
+  @@map("settlement_status")
+}
+
+enum WeighmentStage {
+  SUPPLIER_SITE
+  DISPATCH
+  DESTINATION
+  JOINT
+
+  @@map("weighment_stage")
+}
+
+enum SeoPageType {
+  CATEGORY
+  SCRAP_GRADE
+  PRODUCT
+  SERVICE
+  LOCATION_CITY
+  LOCATION_DISTRICT
+  LOCATION_INDUSTRIAL_AREA
+  LOCATION_STATE
+  GUIDE
+
+  @@map("seo_page_type")
+}
+
+enum ContentSource {
+  HUMAN
+  AI_ASSISTED
+  IMPORTED
+
+  @@map("content_source")
+}
+
+enum ContentReviewState {
+  UNREVIEWED
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  PUBLISHED
+
+  @@map("content_review_state")
+}
+
+enum CoverageLevel {
+  SERVICED
+  PICKUP_ONLY
+  REFERRAL_ONLY
+  NOT_SERVICED
+
+  @@map("coverage_level")
+}
+
+enum RedirectStatusCode {
+  MOVED_PERMANENTLY_301
+  MOVED_TEMPORARILY_302
+  GONE_410
+
+  @@map("redirect_status_code")
+}
+
+/// D5 / D7 — ANY is an explicit non-null wildcard. NULL cannot express "applies to every role"
+/// inside a GiST exclusion constraint (§15.5.2).
+enum InvoiceRole {
+  ANY
+  MATERIAL
+  COMMISSION
+  SERVICE_FEE
+  FREIGHT
+  OTHER
+
+  @@map("invoice_role")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  VOID
+  CREDITED
+
+  @@map("invoice_status")
+}
+
+/// D6 — STOCK is declared now, implemented only when migration 20 is authorised (§15.8).
+enum InventoryMode {
+  BACK_TO_BACK
+  STOCK
+
+  @@map("inventory_mode")
+}
+
+enum TaxReviewDecision {
+  APPROVED
+  ADJUSTED
+  REJECTED
+
+  @@map("tax_review_decision")
+}
+
+enum MigrationDirection {
+  UP
+  DOWN
+
+  @@map("migration_direction")
+}
+
+enum MigrationRunStatus {
+  PENDING
+  VALIDATED
+  APPLYING
+  APPLIED
+  FAILED
+  ROLLED_BACK
+  FAULTED
+
+  @@map("migration_run_status")
+}
+
+// ---------------------------------------------------------------------------
+// Group A — identity, organisation and access (§5.3)
+// ---------------------------------------------------------------------------
+
+model User {
+  id                  String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email               String     @unique
+  emailVerifiedAt     DateTime?  @map("email_verified_at") @db.Timestamptz(6)
+  passwordHash        String?    @map("password_hash")
+  passwordChangedAt   DateTime?  @map("password_changed_at") @db.Timestamptz(6)
+  fullName            String     @map("full_name")
+  phone               String?
+  role                UserRole
+  status              UserStatus @default(INVITED)
+  locale              String     @default("en-IN")
+  mfaEnabled          Boolean    @default(false) @map("mfa_enabled")
+  /// Application-encrypted. Never logged, never serialised.
+  mfaSecretCiphertext String?    @map("mfa_secret_ciphertext")
+  failedLoginCount    Int        @default(0) @map("failed_login_count")
+  lockedUntil         DateTime?  @map("locked_until") @db.Timestamptz(6)
+  lastLoginAt         DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt           DateTime?  @map("deleted_at") @db.Timestamptz(6)
+
+  sessions              Session[]
+  authEvents            AuthEvent[]
+  adminProfile          AdminProfile?
+  buyerProfile          BuyerProfile?          @relation("BuyerProfileUser")
+  supplierProfile       SupplierProfile?       @relation("SupplierProfileUser")
+  invitationsSent       PortalInvitation[]     @relation("InvitationInviter")
+  contacts              OrganisationContact[]
+  documentsUploaded     Document[]             @relation("DocumentUploader")
+  documentAccessLogs    DocumentAccessLog[]
+  auditLogs             AuditLog[]
+  pricingRuleSets       PricingRuleSet[]       @relation("RuleSetApprover")
+  taxRules              TaxRule[]              @relation("TaxRuleApprover")
+  migrationRunsApplied  MigrationRun[]         @relation("MigrationAppliedBy")
+  migrationRunsApproved MigrationRun[]         @relation("MigrationApprovedBy")
+  /// Phase 1 — material intelligence.
+  materialAliasesVerified MaterialAlias[]           @relation("MaterialAliasVerifier")
+  aliasVerificationsMade  MaterialAliasVerification[] @relation("AliasVerificationDecider")
+
+  @@index([role, status])
+  @@index([status, createdAt])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model Session {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  /// sha-256 of the cookie value. The cookie itself is never stored.
+  tokenHash      String    @unique @map("token_hash")
+  /// A role change revokes every session issued under the old role (§17.4).
+  roleAtIssue    UserRole  @map("role_at_issue")
+  ipHash         String?   @map("ip_hash")
+  userAgentHash  String?   @map("user_agent_hash")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeenAt     DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedReason  String?   @map("revoked_reason")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("sessions")
+}
+
+/// Authentication audit trail, deliberately separate from the business audit log.
+model AuthEvent {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String?  @map("user_id") @db.Uuid
+  emailAttempted  String?  @map("email_attempted")
+  /// LOGIN_SUCCESS | LOGIN_FAILED | LOGOUT | MFA_CHALLENGE | PASSWORD_RESET_REQUESTED |
+  /// PASSWORD_CHANGED | ACCOUNT_LOCKED | SESSION_REVOKED (§5.3 — free text, not an enum)
+  eventType       String   @map("event_type")
+  success         Boolean
+  ipHash          String?  @map("ip_hash")
+  userAgentHash   String?  @map("user_agent_hash")
+  /// Redacted. Never contains a password, a token or a secret.
+  detail          Json?
+  occurredAt      DateTime @map("occurred_at") @db.Timestamptz(6)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, occurredAt])
+  @@index([emailAttempted, occurredAt])
+  @@index([eventType, occurredAt])
+  @@map("auth_events")
+}
+
+model AdminProfile {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String    @unique @map("user_id") @db.Uuid
+  staffCode     String    @unique @map("staff_code")
+  tier          AdminTier
+  jobTitle      String?   @map("job_title")
+  /// e.g. scrap desk, parts desk.
+  desk          String?
+  mfaRequired   Boolean   @default(true) @map("mfa_required")
+  /// Maximum quote value this admin may approve alone (§17.4 dual control).
+  approvalLimit Decimal?  @map("approval_limit") @db.Decimal(18, 2)
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user          User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grants        AdminPermissionGrant[]    @relation("GrantAdmin")
+  grantsIssued  AdminPermissionGrant[]    @relation("GrantGrantedBy")
+  verifications OrganisationVerification[]
+
+  @@map("admin_profiles")
+}
+
+/// Per-user override on top of the tier baseline (§17.3). A grant is additive.
+model AdminPermissionGrant {
+  id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  adminId     String          @map("admin_id") @db.Uuid
+  permission  AdminPermission
+  /// GRANT | REVOKE
+  effect      String
+  grantedById String?         @map("granted_by_id") @db.Uuid
+  reason      String?
+  expiresAt   DateTime?       @map("expires_at") @db.Timestamptz(6)
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  admin     AdminProfile  @relation("GrantAdmin", fields: [adminId], references: [id], onDelete: Cascade)
+  grantedBy AdminProfile? @relation("GrantGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@unique([adminId, permission])
+  @@index([adminId])
+  @@map("admin_permission_grants")
+}
+
+model PortalInvitation {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email          String
+  role           UserRole
+  organisationId String?   @map("organisation_id") @db.Uuid
+  invitedById    String?   @map("invited_by_id") @db.Uuid
+  tokenHash      String    @unique @map("token_hash")
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
+  acceptedAt     DateTime? @map("accepted_at") @db.Timestamptz(6)
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: Restrict)
+  invitedBy    User?         @relation("InvitationInviter", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  @@index([email, expiresAt])
+  @@index([organisationId])
+  @@map("portal_invitations")
+}
+
+/// The legal trading entity. Replaces separate buyer and seller company tables.
+model Organisation {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  legalName          String             @map("legal_name")
+  tradeName          String?            @map("trade_name")
+  orgType            OrgType            @map("org_type")
+  /// CIN or equivalent.
+  registrationNumber String?            @map("registration_number")
+  /// Validated format only. No rate and no tax conclusion is stored here.
+  gstin              String?
+  pan                String?
+  iec                String?
+  countryCode        String             @map("country_code") @db.Char(2)
+  /// Jurisdiction input for tax resolution (§15.5). Not a location_states FK in M1.
+  stateCode          String?            @map("state_code")
+  city               String?
+  website            String?
+  verificationStatus VerificationStatus @default(NOT_SUBMITTED) @map("verification_status")
+  /// ACTIVE | ON_HOLD | CLOSED
+  accountStatus      String             @default("ACTIVE") @map("account_status")
+  /// Whether a supplier may be matched to enquiries.
+  isListable         Boolean            @default(false) @map("is_listable")
+  /// Admin-only. Never serialised outward (§18.2).
+  internalNotes      String?            @map("internal_notes")
+  /// PRIMEMET | BUYER | SELLER | PARTNER | OTHER. A partial unique index in the constraints
+  /// migration guarantees exactly one non-deleted PRIMEMET row (§15.5.1, §18.3).
+  orgKind            String             @default("OTHER") @map("org_kind")
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt          DateTime?          @map("deleted_at") @db.Timestamptz(6)
+
+  addresses      OrganisationAddress[]
+  contacts       OrganisationContact[]
+  verifications  OrganisationVerification[]
+  buyerProfile   BuyerProfile?
+  supplierProfile SupplierProfile?
+  invitations    PortalInvitation[]
+  documents      Document[]             @relation("DocumentOwnerOrg")
+  documentAccess DocumentAccessLog[]
+
+  // gstin and pan are uniquely indexed only where not null — partial unique indexes, hand-written.
+  @@index([orgType, verificationStatus])
+  @@index([stateCode])
+  @@index([deletedAt])
+  @@map("organisations")
+}
+
+model OrganisationAddress {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organisationId String   @map("organisation_id") @db.Uuid
+  /// BILLING | SHIPPING | SITE | REGISTERED
+  kind           String
+  label          String?
+  line1          String?
+  line2          String?
+  city           String
+  stateCode      String   @map("state_code")
+  postalCode     String?  @map("postal_code")
+  countryCode    String   @map("country_code") @db.Char(2)
+  isDefault      Boolean  @default(false) @map("is_default")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation  Organisation   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  buyerDefaults BuyerProfile[] @relation("BuyerDefaultShipTo")
+
+  @@index([organisationId, kind])
+  @@map("organisation_addresses")
+}
+
+/// PRIVATE by default (D2). Never joined into a public or cross-party response.
+model OrganisationContact {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organisationId String   @map("organisation_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  fullName       String   @map("full_name")
+  roleLabel      String?  @map("role_label")
+  email          String
+  phone          String?
+  isPrimary      Boolean  @default(false) @map("is_primary")
+  /// An admin may consent to share this contact. Sharing itself is an event, not this flag (§18.3).
+  shareable      Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([organisationId, email])
+  @@index([organisationId, isPrimary])
+  @@map("organisation_contacts")
+}
+
+model OrganisationVerification {
+  id              String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organisationId  String             @map("organisation_id") @db.Uuid
+  type            VerificationType
+  status          VerificationStatus @default(PENDING)
+  /// The claimed number (GSTIN, PAN…), stored normalised.
+  referenceValue  String?            @map("reference_value")
+  documentId      String?            @map("document_id") @db.Uuid
+  verifiedById    String?            @map("verified_by_id") @db.Uuid
+  verifiedAt      DateTime?          @map("verified_at") @db.Timestamptz(6)
+  expiresAt       DateTime?          @map("expires_at") @db.Timestamptz(6)
+  rejectionReason String?            @map("rejection_reason")
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  document     Document?    @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  verifiedBy   AdminProfile? @relation(fields: [verifiedById], references: [id], onDelete: SetNull)
+
+  @@unique([organisationId, type])
+  @@index([status, expiresAt])
+  @@map("organisation_verifications")
+}
+
+/// Concurrency-safe human reference allocation: ENQ-2026-000123, QT-2026-000045, ORD-2026-000031.
+/// Allocated by an UPDATE … RETURNING in the application; never by a sequence per document type.
+model ReferenceSequence {
+  prefix    String
+  year      Int
+  lastValue BigInt @default(0) @map("last_value")
+
+  @@id([prefix, year])
+  @@map("reference_sequences")
+}
+
+// ---------------------------------------------------------------------------
+// Group C — catalogue and configurable composition (§8.3). Migration 2.
+// Part A's material_categories / material_grades / product_categories / product_specs are
+// superseded by §9.2 and §9.4 and are deliberately not implemented.
+// ---------------------------------------------------------------------------
+
+/// One row per public catalogue page. The two shipped kinds are SCRAP and SPARE_PARTS.
+model Category {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// /scrap-metals, /spare-parts — a live URL. Immutable once published (§26.1).
+  slug             String           @unique
+  kind             CategoryKind
+  name             String
+  shortDescription String?          @map("short_description")
+  longDescription  String?          @map("long_description")
+  heroDocumentId   String?          @map("hero_document_id") @db.Uuid
+  publicationState PublicationState @default(DRAFT) @map("publication_state")
+  publishedAt      DateTime?        @map("published_at") @db.Timestamptz(6)
+  sortOrder        Int              @default(0) @map("sort_order")
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  heroDocument Document?       @relation("CategoryHeroDocument", fields: [heroDocumentId], references: [id], onDelete: Restrict)
+  families     ProductFamily[]
+  grades       ScrapGrade[]
+  /// Phase 1: optional grouping of material families under this public catalogue category.
+  materialFamilies MaterialFamily[] @relation("FamilyCategory")
+
+  @@index([kind, publicationState, sortOrder])
+  @@map("categories")
+}
+
+/// Groups spare parts under a category (bearings, pumps, valves).
+model ProductFamily {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  categoryId       String           @map("category_id") @db.Uuid
+  slug             String           @unique
+  name             String
+  description      String?
+  publicationState PublicationState @default(DRAFT) @map("publication_state")
+  sortOrder        Int              @default(0) @map("sort_order")
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  category Category  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  products Product[]
+
+  @@index([categoryId, publicationState, sortOrder])
+  @@map("product_families")
+}
+
+/// Spare parts. Never a price, never a stock count on the public row.
+model Product {
+  id                     String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId               String           @map("family_id") @db.Uuid
+  /// /spare-parts/[slug]
+  slug                   String           @unique
+  /// May be unknown at intake.
+  partNumber             String?          @map("part_number")
+  /// OEM cross-references.
+  alternateNumbers       String[]         @default([]) @map("alternate_numbers")
+  brand                  String?
+  /// NULL means unknown, and the UI says so.
+  manufacturer           String?
+  title                  String
+  shortDescription       String?          @map("short_description")
+  /// Free text, may be NULL. Structured attributes live in product_specifications.
+  technicalSpecification String?          @map("technical_specification")
+  condition              ProductCondition @default(UNKNOWN)
+  priceMode              PriceMode        @default(REQUEST) @map("price_mode")
+  publicationState       PublicationState @default(DRAFT) @map("publication_state")
+  publishedAt            DateTime?        @map("published_at") @db.Timestamptz(6)
+  createdAt              DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt              DateTime?        @map("deleted_at") @db.Timestamptz(6)
+
+  family          ProductFamily          @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  specifications  ProductSpecification[]
+  compatibilities ProductCompatibility[]
+  listings        SupplierListing[]
+
+  @@index([familyId, publicationState])
+  @@index([brand, condition])
+  @@index([partNumber])
+  @@index([publicationState, publishedAt])
+  @@map("products")
+}
+
+/// Structured attributes as rows, not columns.
+model ProductSpecification {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId  String   @map("product_id") @db.Uuid
+  /// "bore", "pressure rating", "voltage"
+  attribute  String
+  valueText  String   @map("value_text")
+  unit       String?
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, sortOrder])
+  @@map("product_specifications")
+}
+
+/// "Fits equipment X". Deliberately conservative: a claim, with a source.
+model ProductCompatibility {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId      String    @map("product_id") @db.Uuid
+  equipmentMake  String    @map("equipment_make")
+  equipmentModel String    @map("equipment_model")
+  /// DIRECT | EQUIVALENT | REQUIRES_ADAPTOR
+  fitmentType    String    @map("fitment_type")
+  /// Who confirmed it. An unsourced fitment claim is not published.
+  sourceNote     String?   @map("source_note")
+  verifiedAt     DateTime? @map("verified_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([equipmentMake, equipmentModel])
+  @@map("product_compatibilities")
+}
+
+/// The tradeable grade. Slug is a live SEO URL and must not change once published.
+model ScrapGrade {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  categoryId       String           @map("category_id") @db.Uuid
+  /// /scrap-metals/[slug]
+  slug             String           @unique
+  /// Internal short code, e.g. HMS-1.
+  code             String           @unique
+  name             String
+  shortDescription String?          @map("short_description")
+  tradeDescription String?          @map("trade_description")
+  typicalOrigin    String?          @map("typical_origin")
+  hazardClass      String?          @map("hazard_class")
+  defaultPriceMode PriceMode        @default(REQUEST) @map("default_price_mode")
+  publicationState PublicationState @default(DRAFT) @map("publication_state")
+  publishedAt      DateTime?        @map("published_at") @db.Timestamptz(6)
+  /// Phase 1: optional link to the general material identity (material_grades → materials).
+  /// Nullable so every pre-existing ScrapGrade row and relationship remains valid unchanged.
+  materialId       String?          @map("material_id") @db.Uuid
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt        DateTime?        @map("deleted_at") @db.Timestamptz(6)
+
+  category   Category                    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  attributes GradeCompositionAttribute[]
+  sources    GradeReferenceSource[]
+  listings   SupplierListing[]
+  material   Material?                   @relation("ScrapGradeMaterial", fields: [materialId], references: [id], onDelete: SetNull)
+
+  @@index([categoryId, publicationState])
+  @@index([materialId], map: "ix_scrap_grades_material")
+  @@map("scrap_grades")
+}
+
+/// The controlled vocabulary of measurable attributes. "Fe", "Cu", "Moisture", "Max dimension".
+model CompositionAttributeDef {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  symbol        String          @unique
+  name          String
+  canonicalUnit CompositionUnit @map("canonical_unit")
+  isElemental   Boolean         @default(true) @map("is_elemental")
+  description   String?
+  sortOrder     Int             @default(0) @map("sort_order")
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  gradeAttributes GradeCompositionAttribute[]
+
+  @@index([sortOrder])
+  @@map("composition_attribute_defs")
+}
+
+/// Per-grade configurable limits — "the configurable composition". Basis and unit are per row so a
+/// grade may mix elemental percentages with a dimensional maximum in millimetres.
+model GradeCompositionAttribute {
+  id              String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  gradeId         String             @map("grade_id") @db.Uuid
+  attributeId     String             @map("attribute_id") @db.Uuid
+  basis           CompositionBasis
+  /// Stored in `unit`. All three bounds are numeric(12,6) and have NO default: an unknown limit is
+  /// NULL, never 0 (a 0 % copper minimum would be a false claim).
+  referenceMin    Decimal?           @map("reference_min") @db.Decimal(12, 6)
+  referenceMax    Decimal?           @map("reference_max") @db.Decimal(12, 6)
+  referenceTarget Decimal?           @map("reference_target") @db.Decimal(12, 6)
+  unit            CompositionUnit
+  /// A breach blocks dispatch (§14.1).
+  isCritical      Boolean            @default(false) @map("is_critical")
+  /// Commercial tolerance, agreed per grade.
+  tolerancePct    Decimal?           @map("tolerance_pct") @db.Decimal(9, 4)
+  /// Buyer spec / supplier sheet / contract.
+  sourceNote      String?            @map("source_note")
+  verification    VerificationStatus @default(NOT_SUBMITTED)
+  sortOrder       Int                @default(0) @map("sort_order")
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  grade     ScrapGrade              @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+  attribute CompositionAttributeDef @relation(fields: [attributeId], references: [id], onDelete: Restrict)
+
+  @@unique([gradeId, attributeId])
+  @@index([gradeId, sortOrder])
+  @@map("grade_composition_attributes")
+}
+
+/// Provenance for the limits above.
+model GradeReferenceSource {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  gradeId       String    @map("grade_id") @db.Uuid
+  /// BUYER_SPEC | SUPPLIER_SHEET | CONTRACT | STANDARD | INTERNAL
+  sourceType    String    @map("source_type")
+  /// Standard number or document label.
+  reference     String?
+  documentId    String?   @map("document_id") @db.Uuid
+  effectiveFrom DateTime? @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  grade    ScrapGrade @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+  document Document?  @relation(fields: [documentId], references: [id], onDelete: Restrict)
+
+  @@index([gradeId, sourceType])
+  @@map("grade_reference_sources")
+}
+
+/// Reference list matching the shipped InspectionMethod values. Seeded in migration 19.
+model InspectionMethodRef {
+  id        String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key       InspectionMethod  @unique
+  label     String
+  useNote   String?           @map("use_note")
+  sortOrder Int               @default(0) @map("sort_order")
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("inspection_methods_ref")
+}
+
+// ---------------------------------------------------------------------------
+// Group D — parties (§8.4 note). Migration 3. Lots, inspections and approvals are M6.
+//
+// Reconciliation note. §5.3 defines buyer_profiles/supplier_profiles as 1:1 with a USER, each
+// carrying organisation_id. §8.4 defines the same two tables as 1:1 with an ORGANISATION and adds
+// the sourcing and demand attributes. Migration 3 in §24.2 references the §8.4 shape, so that is
+// authoritative and there is exactly ONE table of each name here: organisation_id is the unique
+// key, and user_id is kept as a nullable unique link for the portal user who represents that party.
+// It is nullable because an organisation is created and verified before its first invitation is
+// accepted. Nothing is duplicated and no field from either definition is dropped.
+// ---------------------------------------------------------------------------
+
+model SupplierProfile {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organisationId     String             @unique @map("organisation_id") @db.Uuid
+  userId             String?            @unique @map("user_id") @db.Uuid
+  /// The portal user's own job context (§5.3).
+  contactRole        String?            @map("contact_role")
+  isPrimaryContact   Boolean            @default(false) @map("is_primary_contact")
+  canSubmitQuotes    Boolean            @default(true) @map("can_submit_quotes")
+  /// SCRAP | SPARE_PARTS | BOTH
+  capabilities       String[]           @default([])
+  materialsHandled   String[]           @default([]) @map("materials_handled")
+  /// State codes.
+  geographicReach    String[]           @default([]) @map("geographic_reach")
+  monthlyCapacityKg  Decimal?           @map("monthly_capacity_kg") @db.Decimal(18, 3)
+  hasWeighbridge     Boolean?           @map("has_weighbridge")
+  hasTestingFacility Boolean?           @map("has_testing_facility")
+  paymentTermsDays   Int?               @map("payment_terms_days")
+  creditTermsDays    Int?               @map("credit_terms_days")
+  verification       VerificationStatus @default(NOT_SUBMITTED)
+  /// Internal only. Never exposed (§18.2).
+  ratingInternal     Decimal?           @map("rating_internal") @db.Decimal(3, 2)
+  notesInternal      String?            @map("notes_internal")
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation Organisation      @relation(fields: [organisationId], references: [id], onDelete: Restrict)
+  user         User?             @relation("SupplierProfileUser", fields: [userId], references: [id], onDelete: SetNull)
+  listings     SupplierListing[]
+
+  @@index([verification])
+  @@index([capabilities], type: Gin)
+  @@map("supplier_profiles")
+}
+
+model BuyerProfile {
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organisationId    String             @unique @map("organisation_id") @db.Uuid
+  userId            String?            @unique @map("user_id") @db.Uuid
+  /// The portal user's own job context (§5.3).
+  jobTitle          String?            @map("job_title")
+  department        String?
+  approvalLimit     Decimal?           @map("approval_limit") @db.Decimal(18, 2)
+  preferredCurrency String?            @map("preferred_currency") @db.Char(3)
+  defaultShipToId   String?            @map("default_ship_to_id") @db.Uuid
+  industries        String[]           @default([])
+  /// Denormalised grade ids. No FK: a grade may be archived without rewriting buyer history.
+  preferredGrades   String[]           @default([]) @map("preferred_grades")
+  typicalMonthlyKg  Decimal?           @map("typical_monthly_kg") @db.Decimal(18, 3)
+  deliveryStates    String[]           @default([]) @map("delivery_states")
+  creditTermsDays   Int?               @map("credit_terms_days")
+  /// Internal only. Never exposed.
+  creditLimit       Decimal?           @map("credit_limit") @db.Decimal(18, 2)
+  verification      VerificationStatus @default(NOT_SUBMITTED)
+  notesInternal     String?            @map("notes_internal")
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organisation  Organisation         @relation(fields: [organisationId], references: [id], onDelete: Restrict)
+  user          User?                @relation("BuyerProfileUser", fields: [userId], references: [id], onDelete: SetNull)
+  defaultShipTo OrganisationAddress? @relation("BuyerDefaultShipTo", fields: [defaultShipToId], references: [id], onDelete: SetNull)
+
+  @@index([verification])
+  @@index([industries], type: Gin)
+  @@map("buyer_profiles")
+}
+
+/// A supplier's standing offer. Not a price, not stock.
+model SupplierListing {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  supplierId      String        @map("supplier_id") @db.Uuid
+  gradeId         String?       @map("grade_id") @db.Uuid
+  productId       String?       @map("product_id") @db.Uuid
+  quantityKg      Decimal?      @map("quantity_kg") @db.Decimal(18, 3)
+  /// Column retained; the FK to location_cities is added with migration 17 (M8) because that table
+  /// does not exist yet. Deliberately no relation field, so no dangling FK is created now.
+  locationCityId  String?       @map("location_city_id") @db.Uuid
+  availableFrom   DateTime?     @map("available_from") @db.Date
+  availableTo     DateTime?     @map("available_to") @db.Date
+  status          ListingStatus @default(DRAFT)
+  notes           String?
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  supplier SupplierProfile @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  grade    ScrapGrade?     @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  product  Product?        @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([supplierId, status])
+  @@index([gradeId, status])
+  @@index([productId, status])
+  @@map("supplier_listings")
+}
+
+// ---------------------------------------------------------------------------
+// Group G part 1 + tax — migration 6: pricing_rule_sets, tax_components_ref, tax_rules,
+// tax_treatments, and location_states because tax_rules.jurisdiction_state_id references it.
+//
+// NOT included: `pricing_components`. §24.2 step 6 names "components" but neither Part A nor §8.7
+// defines its columns, so nothing is invented here. It arrives with the pricing engine (M5).
+// ---------------------------------------------------------------------------
+
+/// The top of the geography tree. Internal; drives coverage and tax jurisdiction (§8.8).
+model LocationState {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// ISO 3166-2 subdivision, e.g. "MH".
+  code          String   @unique
+  name          String
+  countryCode   String   @map("country_code") @db.Char(2)
+  /// Joins to tax rules (§15.5). A state is a tax jurisdiction input.
+  taxRegionCode String?  @map("tax_region_code")
+  isServiced    Boolean  @default(false) @map("is_serviced")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  taxRules      TaxRule[]
+  taxTreatments TaxTreatment[]
+
+  @@index([countryCode, isServiced])
+  @@map("location_states")
+}
+
+/// Versioned formula sets. `version` plus `key` identifies a set; the ACTIVE one is uniquely
+/// constrained per key by a hand-written partial unique index.
+model PricingRuleSet {
+  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key          String
+  name         String
+  version      Int
+  status       PricingRuleStatus @default(DRAFT)
+  currencyCode String            @map("currency_code") @db.Char(3)
+  effectiveFrom DateTime         @map("effective_from") @db.Timestamptz(6)
+  effectiveTo   DateTime?        @map("effective_to") @db.Timestamptz(6)
+  approvedById  String?          @map("approved_by_id") @db.Uuid
+  approvedAt    DateTime?        @map("approved_at") @db.Timestamptz(6)
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  approvedBy User? @relation("RuleSetApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@unique([key, version])
+  @@index([status, effectiveFrom])
+  @@map("pricing_rule_sets")
+}
+
+/// The tax component list as DATA, not an enum (D7). Seeded in migration 19 — codes and names only.
+/// Seeding it states only that these component names exist. It states nothing about applicability,
+/// rate or treatment, all of which stay in tax_rules and remain open (§15.5.5).
+model TaxComponentRef {
+  code         String       @id
+  name         String
+  isStatutory  Boolean      @map("is_statutory")
+  appliesAt    TaxAppliesTo @map("applies_at")
+  sortOrder    Int          @default(0) @map("sort_order") @db.SmallInt
+  active       Boolean      @default(true)
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  rules TaxRule[]
+
+  @@map("tax_components_ref")
+}
+
+/// Data, not code. No rate, no applicability and no legal conclusion is asserted by this schema.
+model TaxRule {
+  id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                String
+  componentCode       String             @map("component_code")
+  /// NULL = national fallback.
+  jurisdictionStateId String?            @map("jurisdiction_state_id") @db.Uuid
+  /// D7 — never NULL. ANY is the explicit wildcard, because a GiST "=" treats NULL as distinct from
+  /// every value including another NULL (§15.5.2).
+  invoiceRole         InvoiceRole        @default(ANY) @map("invoice_role")
+  appliesTo           TaxAppliesTo       @map("applies_to")
+  /// NULL = applies to all transaction models.
+  transactionModel    TransactionModel?  @map("transaction_model")
+  hsnSacCode          String?            @map("hsn_sac_code")
+  ratePct             Decimal            @map("rate_pct") @db.Decimal(9, 4)
+  taxableBaseRule     TaxBaseRule        @map("taxable_base_rule")
+  includesFreight     Boolean            @default(false) @map("includes_freight")
+  reverseCharge       Boolean            @default(false) @map("reverse_charge")
+  thresholdAmount     Decimal?           @map("threshold_amount") @db.Decimal(18, 2)
+  effectiveFrom       DateTime           @map("effective_from") @db.Date
+  effectiveTo         DateTime?          @map("effective_to") @db.Date
+  status              TaxRuleStatus      @default(DRAFT)
+  approvedById        String?            @map("approved_by_id") @db.Uuid
+  approvedAt          DateTime?          @map("approved_at") @db.Timestamptz(6)
+  /// Notification / circular cited.
+  legalReference      String?            @map("legal_reference")
+  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  component         TaxComponentRef @relation(fields: [componentCode], references: [code], onDelete: Restrict)
+  jurisdictionState LocationState?  @relation(fields: [jurisdictionStateId], references: [id], onDelete: Restrict)
+  approvedBy        User?           @relation("TaxRuleApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([componentCode, transactionModel, invoiceRole, jurisdictionStateId, effectiveFrom])
+  @@index([status, effectiveFrom])
+  @@map("tax_rules")
+}
+
+/// A named combination applied to one transaction and one document role.
+model TaxTreatment {
+  id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                 String
+  name                 String
+  transactionModel     TransactionModel  @map("transaction_model")
+  appliesTo            TaxAppliesTo      @map("applies_to")
+  invoiceRole          InvoiceRole       @default(ANY) @map("invoice_role")
+  jurisdictionStateId  String?           @map("jurisdiction_state_id") @db.Uuid
+  /// May span roles; the snapshot records which applied.
+  ruleIds              String[]          @map("rule_ids") @db.Uuid
+  requiresAdminReview  Boolean           @default(true) @map("requires_admin_review")
+  status               TaxRuleStatus     @default(DRAFT)
+  effectiveFrom        DateTime          @map("effective_from") @db.Date
+  effectiveTo          DateTime?         @map("effective_to") @db.Date
+  createdAt            DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  jurisdictionState LocationState? @relation(fields: [jurisdictionStateId], references: [id], onDelete: Restrict)
+
+  @@index([transactionModel, invoiceRole, status, effectiveFrom])
+  @@map("tax_treatments")
+}
+
+// ---------------------------------------------------------------------------
+// Group G part 2 — documents, audit and migration runs. Migrations 14, 15 and the D8 record.
+// ---------------------------------------------------------------------------
+
+/// ONE row per stored file version. Immutable once uploaded: a new version is a new row and the old
+/// one gets superseded_by_id. Insert-only (created_at, no updated_at).
+model Document {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Opaque object key in the private bucket. Never a public URL.
+  storageKey       String             @unique @map("storage_key")
+  bucket           String
+  originalFilename String             @map("original_filename")
+  mimeType         String             @map("mime_type")
+  sizeBytes        BigInt             @map("size_bytes")
+  /// Integrity and duplicate detection.
+  checksumSha256   String             @map("checksum_sha256")
+  documentType     DocumentType       @map("document_type")
+  visibility       DocumentVisibility @default(INTERNAL)
+  /// NORMAL | COMMERCIAL | PERSONAL | LEGAL
+  sensitivity      String             @default("NORMAL")
+  ownerOrgId       String?            @map("owner_org_id") @db.Uuid
+  uploadedById     String?            @map("uploaded_by_id") @db.Uuid
+  scanStatus       ScanStatus         @default(PENDING) @map("scan_status")
+  scanResult       String?            @map("scan_result")
+  retentionUntil   DateTime?          @map("retention_until") @db.Date
+  legalHold        Boolean            @default(false) @map("legal_hold")
+  supersededById   String?            @map("superseded_by_id") @db.Uuid
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  ownerOrg    Organisation? @relation("DocumentOwnerOrg", fields: [ownerOrgId], references: [id], onDelete: Restrict)
+  uploadedBy  User?         @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  supersededBy Document?    @relation("DocumentSupersededBy", fields: [supersededById], references: [id], onDelete: Restrict)
+  supersedes   Document[]   @relation("DocumentSupersededBy")
+
+  categoryHeroes      Category[]               @relation("CategoryHeroDocument")
+  gradeSources        GradeReferenceSource[]
+  verifications       OrganisationVerification[]
+  accessLog           DocumentAccessLog[]
+  /// Phase 1: evidence attached to an alias verification decision.
+  aliasVerificationEvidence MaterialAliasVerification[] @relation("AliasVerificationEvidence")
+
+  @@index([documentType, createdAt])
+  @@index([ownerOrgId])
+  @@index([scanStatus])
+  @@index([visibility])
+  @@index([checksumSha256])
+  @@map("documents")
+}
+
+/// Every signed-URL issue and download, including DENIED. Answers "who saw this?". Insert-only.
+model DocumentAccessLog {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  documentId    String   @map("document_id") @db.Uuid
+  userId        String?  @map("user_id") @db.Uuid
+  orgId         String?  @map("org_id") @db.Uuid
+  /// SIGNED_URL_ISSUED | DOWNLOAD | VIEW | DENIED
+  action        String
+  ipHash        String?  @map("ip_hash")
+  userAgentHash String?  @map("user_agent_hash")
+  /// e.g. "buyer approval review"
+  purpose       String?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  document Document      @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  user     User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  org      Organisation? @relation(fields: [orgId], references: [id], onDelete: SetNull)
+
+  @@index([documentId, createdAt])
+  @@index([userId, createdAt])
+  @@map("document_access_log")
+}
+
+/// Append-only business audit trail. Dot-notation action, e.g. enquiry.status_changed.
+model AuditLog {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  occurredAt   DateTime      @map("occurred_at") @db.Timestamptz(6)
+  actorUserId  String?       @map("actor_user_id") @db.Uuid
+  actorRole    UserRole?     @map("actor_role")
+  actorIpHash  String?       @map("actor_ip_hash")
+  action       String
+  entityType   String        @map("entity_type")
+  entityId     String?       @map("entity_id") @db.Uuid
+  beforeState  Json?         @map("before_state")
+  afterState   Json?         @map("after_state")
+  severity     AuditSeverity @default(INFO)
+  /// Correlates the request across logs.
+  requestId    String?       @map("request_id")
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  actorUser User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, occurredAt])
+  @@index([actorUserId, occurredAt])
+  @@index([action, occurredAt])
+  @@index([severity, occurredAt])
+  @@map("audit_logs")
+}
+
+/// Writes that could not be persisted. Losing an audit row is itself an event.
+model AuditLogFailure {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  attemptedAt DateTime @map("attempted_at") @db.Timestamptz(6)
+  payload     Json
+  error       String
+  resolved    Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([resolved, attemptedAt])
+  @@map("audit_log_failures")
+}
+
+/// One row per attempt to apply a versioned migration through the controlled runner (D8, §29).
+/// Written before the first statement runs and closed exactly once afterwards. Never deleted.
+model MigrationRun {
+  id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// The directory name, e.g. 20261031000000_m1_initial_schema.
+  migrationId         String             @map("migration_id")
+  /// Read from the migration's committed metadata, never operator input.
+  description         String
+  /// Of the .sql actually executed: proves the reviewed file is the run file.
+  fileChecksumSha256  String             @map("file_checksum_sha256")
+  /// DOWN only where a reversal was tested.
+  direction           MigrationDirection @default(UP)
+  /// tables/columns/indexes/constraints/views/functions touched.
+  objectsAffected     Json               @map("objects_affected")
+  destructive         Boolean            @default(false)
+  requiresBackup      Boolean            @default(true) @map("requires_backup")
+  appVersion          String             @map("app_version")
+  schemaBefore        String?            @map("schema_before")
+  schemaAfter         String?            @map("schema_after")
+  backupVerified      Boolean            @default(false) @map("backup_verified")
+  /// Provider snapshot id, or a recorded manual attestation.
+  backupReference     String?            @map("backup_reference")
+  dryRunResult        Json?              @map("dry_run_result")
+  status              MigrationRunStatus @default(PENDING)
+  startedAt           DateTime?          @map("started_at") @db.Timestamptz(6)
+  finishedAt          DateTime?          @map("finished_at") @db.Timestamptz(6)
+  durationMs          Int?               @map("duration_ms")
+  errorCode           String?            @map("error_code")
+  /// Sanitised: never SQL fragments, parameter values or row data.
+  errorDetail         String?            @map("error_detail")
+  appliedById         String             @map("applied_by_id") @db.Uuid
+  /// Second approver where required.
+  approvedById        String?            @map("approved_by_id") @db.Uuid
+  requestId           String?            @map("request_id")
+  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  appliedBy  User  @relation("MigrationAppliedBy", fields: [appliedById], references: [id], onDelete: Restrict)
+  approvedBy User? @relation("MigrationApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
+
+  @@index([migrationId, startedAt])
+  @@index([status, startedAt])
+  @@index([appliedById, startedAt])
+  @@map("migration_runs")
+}
+// ---------------------------------------------------------------------------
+// Group I — material intelligence (Phase 1). Migration 20261031000300.
+//
+// The problem this group solves: `ScrapGrade` is the TRADEABLE grade (slug = a live scrap URL,
+// linked to listings and composition limits). It cannot also be the universal identity for
+// "SS 304 as a pipe", "SS 304 as a coil" and "SS 304 as scrap" — that would force one duplicate
+// grade row per product form. Decision D4 therefore introduces a grade → material → product-type
+// chain and leaves `ScrapGrade` untouched except for one nullable link.
+//
+//   material_families  →  material_grades  →  materials  →  material_product_types  →  product_types
+//                                                  └────→  material_aliases → material_alias_verifications
+//                                                  └────→  search_intent_mappings
+//   spec_templates → spec_template_attributes → spec_attributes  (specification per product type)
+//
+// No quantity, stock, availability, price or supplier column exists anywhere in this group: those
+// belong to listings, lots and orders, and mixing them in is how a catalogue starts claiming stock
+// it does not have.
+// ---------------------------------------------------------------------------
+
+enum SpecAttributeDataType {
+  TEXT
+  NUMERIC
+  BOOLEAN
+  ENUMERATION
+  RANGE
+
+  @@map("spec_attribute_data_type")
+}
+
+/// Every verification transition of an alias is recorded; nothing is overwritten in place.
+enum AliasDecision {
+  SUBMITTED
+  VERIFIED
+  REJECTED
+  RETIRED
+
+  @@map("alias_decision")
+}
+
+enum SearchIntentType {
+  MATERIAL
+  PRODUCT_TYPE
+  SPECIFICATION
+  PROCESS
+  LOCATION
+  TRANSACTIONAL
+  NAVIGATIONAL
+
+  @@map("search_intent_type")
+}
+
+/// A metallurgical family: stainless steel, aluminium, copper alloys, carbon steel.
+model MaterialFamily {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Optional grouping under the existing public catalogue. No second taxonomy is invented.
+  categoryId       String?          @map("category_id") @db.Uuid
+  slug             String           @unique
+  code             String           @unique
+  name             String
+  description      String?
+  publicationState PublicationState @default(DRAFT) @map("publication_state")
+  sortOrder        Int              @default(0) @map("sort_order")
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  category Category?       @relation("FamilyCategory", fields: [categoryId], references: [id], onDelete: SetNull)
+  grades   MaterialGrade[]
+
+  @@index([categoryId, publicationState, sortOrder], map: "ix_material_families_category")
+  @@index([publicationState, sortOrder], map: "ix_material_families_pub")
+  @@map("material_families")
+}
+
+/// The general grade identity — the replacement for using ScrapGrade as a universal model.
+/// Holds metallurgical reference data only: family, code, standard designation, UNS number.
+model MaterialGrade {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId         String             @map("family_id") @db.Uuid
+  /// "/materials/stainless-steel/304" style slug. Not a live URL until Phase 2 publishes it.
+  slug             String             @unique
+  /// Family-local grade code: "304", "6061", "C36000".
+  code             String
+  name             String
+  /// Exactly as written by the standard body, e.g. "AISI 304 / EN 1.4301".
+  designation      String?
+  unsNumber        String?            @map("uns_number")
+  /// AISI, ASTM, EN, IS, AA.
+  standardBody     String?            @map("standard_body")
+  description      String?
+  /// Nothing here is asserted as verified until a human records it (VerificationStatus).
+  verification     VerificationStatus @default(NOT_SUBMITTED)
+  publicationState PublicationState   @default(DRAFT) @map("publication_state")
+  sortOrder        Int                @default(0) @map("sort_order")
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt        DateTime?          @map("deleted_at") @db.Timestamptz(6)
+
+  family    MaterialFamily @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  materials Material[]
+
+  @@unique([familyId, code], map: "uq_material_grades_family_code")
+  @@index([publicationState, sortOrder], map: "ix_material_grades_pub")
+  @@index([verification], map: "ix_material_grades_verification")
+  @@map("material_grades")
+}
+
+/// The canonical commercial material: ONE row per grade, reused by every product type.
+/// SS 304 sheet, plate, pipe, coil and scrap all point at this single row.
+model Material {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Unique: one canonical material per grade. Product form lives in material_product_types,
+  /// so adding "pipe" never duplicates the material.
+  gradeId          String           @unique @map("grade_id") @db.Uuid
+  slug             String           @unique
+  name             String
+  summary          String?
+  /// Commercial notes for staff. Never rendered as a technical equivalence claim.
+  internalNote     String?          @map("internal_note")
+  publicationState PublicationState @default(DRAFT) @map("publication_state")
+  sortOrder        Int              @default(0) @map("sort_order")
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt        DateTime?        @map("deleted_at") @db.Timestamptz(6)
+
+  grade         MaterialGrade         @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  productTypes  MaterialProductType[]
+  aliases       MaterialAlias[]
+  searchIntents SearchIntentMapping[]
+  scrapGrades   ScrapGrade[]          @relation("ScrapGradeMaterial")
+
+  @@index([publicationState, sortOrder], map: "ix_materials_pub")
+  @@map("materials")
+}
+
+/// Form the material is traded in: sheet, plate, pipe, coil, bar, scrap, forging stock.
+/// A reference list, not an enum, so a new form needs no migration.
+model ProductType {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  /// True while the form may be selected on a quotation or enquiry.
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  materialLinks MaterialProductType[]
+  specTemplates SpecTemplate[]
+  searchIntents SearchIntentMapping[]
+
+  @@index([isActive, sortOrder], map: "ix_product_types_active")
+  @@map("product_types")
+}
+
+/// Many-to-many: one canonical material, many product forms, each independently configurable.
+/// This is the table that makes "SS 304 sheet" and "SS 304 pipe" differ in specification without
+/// duplicating the material or the grade.
+model MaterialProductType {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId     String   @map("material_id") @db.Uuid
+  productTypeId  String   @map("product_type_id") @db.Uuid
+  /// Which specification template applies to THIS (material, form) pair. Nullable: not every
+  /// pair has a template, and an absent template means "no structured spec exists yet".
+  specTemplateId String?  @map("spec_template_id") @db.Uuid
+  /// At most one primary form per material (partial unique index in the migration).
+  isPrimary      Boolean  @default(false) @map("is_primary")
+  sortOrder      Int      @default(0) @map("sort_order")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  material     Material      @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  productType  ProductType   @relation(fields: [productTypeId], references: [id], onDelete: Restrict)
+  specTemplate SpecTemplate? @relation(fields: [specTemplateId], references: [id], onDelete: SetNull)
+
+  @@unique([materialId, productTypeId], map: "uq_material_product_types")
+  @@index([productTypeId], map: "ix_material_product_types_ptype")
+  @@index([specTemplateId], map: "ix_material_product_types_template")
+  @@map("material_product_types")
+}
+
+/// One phrase that buyers or suppliers use for a material: "SS 304", "AISI 304", "1.4301", "304 SS".
+/// An alias resolves to AT MOST ONE material — enforced by the unique index below, which holds even
+/// after retirement so a phrase can never be moved silently from one material to another.
+model MaterialAlias {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId       String             @map("material_id") @db.Uuid
+  /// As written by the source, preserved verbatim for display.
+  alias            String
+  /// lower(btrim(alias)) — what matching uses, and what the CHECK constraint pins.
+  normalisedAlias  String             @map("normalised_alias")
+  language         String             @default("en")
+  /// Where the phrase came from: supplier sheet, buyer enquiry, standard, search query.
+  source           String?
+  verification     VerificationStatus @default(NOT_SUBMITTED)
+  verifiedById     String?            @map("verified_by_id") @db.Uuid
+  verifiedAt       DateTime?          @map("verified_at") @db.Timestamptz(6)
+  /// Retired, never deleted: the history of a phrase matters when an old quotation is read.
+  isRetired        Boolean            @default(false) @map("is_retired")
+  retiredAt        DateTime?          @map("retired_at") @db.Timestamptz(6)
+  retiredReason    String?            @map("retired_reason")
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  material      Material                   @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  verifiedBy    User?                      @relation("MaterialAliasVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+  verifications MaterialAliasVerification[]
+
+  @@unique([normalisedAlias, language], map: "uq_material_aliases_normalised")
+  @@index([materialId], map: "ix_material_aliases_material")
+  @@index([verification, isRetired], map: "ix_material_aliases_verification")
+  @@map("material_aliases")
+}
+
+/// Insert-only decision history for alias verification. There is no updated_at: a correction is a
+/// new row, so "who verified AISI 304 as SS 304, when, on what evidence" is always answerable.
+model MaterialAliasVerification {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  aliasId            String             @map("alias_id") @db.Uuid
+  decision           AliasDecision
+  previousVerification VerificationStatus? @map("previous_verification")
+  newVerification    VerificationStatus @map("new_verification")
+  /// NULL only where the decider's account was later removed — the CHECK forbids a VERIFIED
+  /// decision without a decider at insert time.
+  decidedById        String?            @map("decided_by_id") @db.Uuid
+  decidedAt          DateTime           @map("decided_at") @db.Timestamptz(6)
+  note               String?
+  evidenceDocumentId String?            @map("evidence_document_id") @db.Uuid
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  alias            MaterialAlias @relation(fields: [aliasId], references: [id], onDelete: Cascade)
+  decidedBy        User?         @relation("AliasVerificationDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  evidenceDocument Document?     @relation("AliasVerificationEvidence", fields: [evidenceDocumentId], references: [id], onDelete: Restrict)
+
+  @@index([aliasId, decidedAt], map: "ix_alias_verifications_alias")
+  @@map("material_alias_verifications")
+}
+
+/// A named set of attributes that applies to one product form (pipe: OD, wall, grade, length).
+model SpecTemplate {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code          String   @unique
+  name          String
+  description   String?
+  /// Optional narrowing to a form. NULL means the template may be attached to any form.
+  productTypeId String?  @map("product_type_id") @db.Uuid
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  productType         ProductType?             @relation(fields: [productTypeId], references: [id], onDelete: SetNull)
+  attributes          SpecTemplateAttribute[]
+  materialProductTypes MaterialProductType[]
+
+  @@index([productTypeId, isActive], map: "ix_spec_templates_ptype")
+  @@map("spec_templates")
+}
+
+/// Controlled vocabulary of specification attributes. A definition, not a value.
+model SpecAttribute {
+  id           String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code         String                @unique
+  label        String
+  dataType     SpecAttributeDataType @map("data_type")
+  canonicalUnit String?              @map("canonical_unit")
+  description  String?
+  sortOrder    Int                   @default(0) @map("sort_order")
+  createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  templates SpecTemplateAttribute[]
+
+  @@index([sortOrder], map: "ix_spec_attributes_sort")
+  @@map("spec_attributes")
+}
+
+/// Which attributes a template asks for, and how.
+model SpecTemplateAttribute {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  templateId    String   @map("template_id") @db.Uuid
+  attributeId   String   @map("attribute_id") @db.Uuid
+  isRequired    Boolean  @default(false) @map("is_required")
+  sortOrder     Int      @default(0) @map("sort_order")
+  /// Permitted values for an ENUMERATION attribute. Empty means unconstrained.
+  allowedValues String[] @default([]) @map("allowed_values")
+  defaultValue  String?  @map("default_value")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  template  SpecTemplate  @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  attribute SpecAttribute @relation(fields: [attributeId], references: [id], onDelete: Restrict)
+
+  @@unique([templateId, attributeId], map: "uq_spec_template_attributes")
+  @@index([attributeId], map: "ix_spec_template_attributes_attribute")
+  @@map("spec_template_attributes")
+}
+
+/// A phrase mapped to what the searcher actually wants. Unverified rows are not published claims:
+/// `verification` gates any use as an approved equivalence or an SEO page target (Phase 2+).
+model SearchIntentMapping {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phrase           String
+  normalisedPhrase String             @map("normalised_phrase")
+  language         String             @default("en")
+  intentType       SearchIntentType   @map("intent_type")
+  materialId       String?            @map("material_id") @db.Uuid
+  productTypeId    String?            @map("product_type_id") @db.Uuid
+  verification     VerificationStatus @default(NOT_SUBMITTED)
+  notes            String?
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  material    Material?    @relation(fields: [materialId], references: [id], onDelete: SetNull)
+  productType ProductType? @relation(fields: [productTypeId], references: [id], onDelete: SetNull)
+
+  @@unique([normalisedPhrase, language], map: "uq_search_intent_phrases")
+  @@index([intentType], map: "ix_search_intents_type")
+  @@index([materialId], map: "ix_search_intents_material")
+  @@map("search_intent_mappings")
+}

@@ -1,0 +1,70 @@
+# M2a compatibility gate (requirement C-M2a-4).
+#
+# This workflow exists for ONE reason: the Linux execution of @node-rs/argon2 v2.2.2 can only be
+# proven on a Linux x64 glibc runtime, and the development machine is Windows. It is
+# workflow_dispatch-only and has no `push` or `pull_request` trigger, so it never runs on its own
+# and cannot fail a normal branch. A human dispatches it, reads the recorded environment, and
+# records the result against C-M2a-4.
+#
+# It touches no database, uses no secrets, and uploads only its own log.
+name: m2a-argon2-gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # A standard GitHub-hosted Ubuntu runner: glibc 2.39 on Node 26.
+  ubuntu:
+    name: ubuntu-24.04 / node 26 (glibc 2.39)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+      - name: Record runtime
+        run: |
+          ldd --version | head -1
+          uname -srm
+          node --version
+      - name: Run the Argon2 gate
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/verify-argon2-runtime.mjs --with-build 2>&1 | tee argon2-gate.log
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: argon2-gate-ubuntu
+          path: argon2-gate.log
+
+  # A Debian container: glibc 2.36, closer to the long-term-support base images normally used for
+  # deploy targets than the runner image above. Two glibc baselines make a regression visible.
+  debian-container:
+    name: node:26-bookworm container (glibc 2.36)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container: node:26-bookworm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record runtime
+        run: |
+          ldd --version | head -1
+          uname -srm
+          node --version
+      - name: Run the Argon2 gate
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/verify-argon2-runtime.mjs --with-build 2>&1 | tee argon2-gate.log
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: argon2-gate-debian
+          path: argon2-gate.log
