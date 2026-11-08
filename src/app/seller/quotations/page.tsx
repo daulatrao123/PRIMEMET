@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+
+import { requirePage } from "@/lib/auth/guards";
 import { Panel, PortalPage, PreviewAction } from "@/components/portal/blocks";
 import { Field, Input, Textarea } from "@/components/ui/input";
 import { NotConnected } from "@/components/ui/not-connected";
@@ -6,7 +8,9 @@ import { EmptyRow, TBody, TH, THead, TR, Table } from "@/components/ui/table";
 
 export const metadata: Metadata = { title: "Quotation submissions" };
 
-export default function SellerQuotationsPage() {
+export default async function SellerQuotationsPage() {
+  // A preview, but still a seller area: an anonymous visitor is redirected before anything renders.
+  await requirePage(["SELLER"], "/seller/quotations");
   return (
     <PortalPage
       eyebrow="Commercial"

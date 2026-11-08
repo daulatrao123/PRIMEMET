@@ -1,88 +1,138 @@
 import type { Metadata } from "next";
-import { Panel, PortalPage, PreviewAction } from "@/components/portal/blocks";
+
+import { Panel, PortalPage } from "@/components/portal/blocks";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
-import { NotConnected } from "@/components/ui/not-connected";
+import { requirePage } from "@/lib/auth/guards";
+import { ACCOUNT_STATUS_LABELS, BUSINESS_TYPE_LABELS, getSellerApplication } from "@/lib/data/seller-portal";
 
 export const metadata: Metadata = { title: "Business profile" };
+export const dynamic = "force-dynamic";
 
 /**
- * Supplier business profile preview.
- * Fields are empty on purpose: no account is loaded and nothing is saved.
+ * The seller's company record and registered address.
+ *
+ * The form posts to `/api/seller/profile`, which resolves the organisation from the session; there is no
+ * organisation id in the markup. The GSTIN is read-only here for the same reason it is read-only for a
+ * buyer: it is the number the desk reviews, not a field a seller edits after submitting.
  */
-export default function SellerProfilePage() {
+export default async function SellerProfilePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ok?: string; error?: string }>;
+}) {
+  const user = await requirePage(["SELLER"], "/seller/profile");
+  const query = await searchParams;
+  const application = await getSellerApplication(user);
+  const organisation = application.organisation;
+
   return (
     <PortalPage
-      eyebrow="Account"
+      eyebrow="Supplier portal"
       title="Business profile"
-      description="Legal identity, operating location and what your business can actually prepare or manufacture."
-      actions={<PreviewAction>Save profile</PreviewAction>}
+      description="Legal identity, registered address and what your business can prepare or manufacture. The desk reviews this before approving the account."
     >
-      <NotConnected>
-        Supplier profile records will be read from and written to PostgreSQL, and reviewed by the
-        desk before qualification. Nothing on this page is stored.
-      </NotConnected>
+      {query.ok ? (
+        <p className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{query.ok}</p>
+      ) : null}
+      {query.error ? (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {query.error}
+        </p>
+      ) : null}
 
-      <Panel title="Legal entity" description="Must match the documentation provided at qualification.">
-        <div className="grid gap-5 sm:grid-cols-2">
-          <Field label="Registered name" htmlFor="sp-company">
-            <Input id="sp-company" name="company" placeholder="Registered business name" />
-          </Field>
-          <Field label="Trading name" htmlFor="sp-trading" hint="Optional">
-            <Input id="sp-trading" name="tradingName" placeholder="If different from the registered name" />
-          </Field>
-          <Field label="Registration number" htmlFor="sp-registration">
-            <Input id="sp-registration" name="registrationNumber" placeholder="Company registration number" />
-          </Field>
-          <Field label="Country of operation" htmlFor="sp-country">
-            <Input id="sp-country" name="country" placeholder="Country" />
-          </Field>
-          <Field label="Operating location" htmlFor="sp-location" hint="Yard, works or workshop address used for collection">
-            <Input id="sp-location" name="location" placeholder="City / region" />
-          </Field>
-          <Field label="Year established" htmlFor="sp-established" hint="Optional">
-            <Input id="sp-established" name="established" placeholder="e.g. 1998" inputMode="numeric" />
-          </Field>
-        </div>
-      </Panel>
+      {!organisation ? (
+        <Panel title="Organisation">
+          <p className="text-sm text-steel-600">
+            This account is not linked to a supplier organisation yet. Contact the PRIMEMET desk.
+          </p>
+        </Panel>
+      ) : (
+        <>
+          <Panel
+            title={organisation.legalName}
+            description="The GSTIN is fixed at submission. Contact the desk if it must change."
+            actions={
+              <Badge tone={organisation.accountStatus === "ACTIVE" ? "green" : organisation.accountStatus === "REJECTED" ? "red" : "amber"}>
+                {ACCOUNT_STATUS_LABELS[organisation.accountStatus] ?? organisation.accountStatus}
+              </Badge>
+            }
+          >
+            {organisation.reviewFeedback ? (
+              <p className="mb-4 rounded-md border border-steel-200 bg-steel-50 px-4 py-3 text-sm leading-6 text-navy-900">
+                <span className="font-medium">Desk decision: </span>
+                {organisation.reviewFeedback}
+              </p>
+            ) : null}
 
-      <Panel title="Capability" description="What the desk needs to know before matching a brief.">
-        <div className="grid gap-5 sm:grid-cols-2">
-          <Field label="Categories supplied" htmlFor="sp-categories">
-            <Select id="sp-categories" name="categories" defaultValue="" multiple size={6}>
-              <option>Ferrous — HMS and shredded</option>
-              <option>Ferrous — plate and structural</option>
-              <option>Non-ferrous — copper</option>
-              <option>Non-ferrous — aluminium</option>
-              <option>Non-ferrous — brass</option>
-              <option>Stainless and alloys</option>
-              <option>Industrial spare parts</option>
-              <option>Machining and fabrication</option>
-            </Select>
-          </Field>
-          <Field label="Preparation capability" htmlFor="sp-prep" hint="Cutting, sorting, baling, screening, testing">
-            <Textarea
-              id="sp-prep"
-              name="prep"
-              rows={6}
-              placeholder="Describe the equipment and processes you can apply to meet a buyer's specification."
-            />
-          </Field>
-          <Field label="Monthly capacity" htmlFor="sp-capacity" className="sm:col-span-2" hint="Only what you would actually commit to">
-            <Input id="sp-capacity" name="capacity" placeholder="e.g. tonnes per month, or units per month" />
-          </Field>
-        </div>
-      </Panel>
+            <form method="post" action="/api/seller/profile" className="grid gap-4 sm:grid-cols-2">
+              <Field label="Company legal name" htmlFor="seller-company">
+                <Input id="seller-company" name="company" defaultValue={organisation.legalName} maxLength={240} required />
+              </Field>
+              <Field label="Trading name" htmlFor="seller-trade" hint="Optional">
+                <Input id="seller-trade" name="tradeName" defaultValue={organisation.tradeName ?? ""} maxLength={240} />
+              </Field>
+              <Field label="GSTIN" htmlFor="seller-gstin" hint="Recorded at registration — not editable here.">
+                <Input id="seller-gstin" value={organisation.gstin ?? "Not provided"} readOnly disabled />
+              </Field>
+              <Field label="Business type" htmlFor="seller-business-type">
+                <Select id="seller-business-type" name="businessType" defaultValue={organisation.businessType ?? ""}>
+                  <option value="">Not specified</option>
+                  {Object.entries(BUSINESS_TYPE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="City" htmlFor="seller-city">
+                <Input id="seller-city" name="city" defaultValue={organisation.city ?? ""} maxLength={120} />
+              </Field>
+              <Field label="State code" htmlFor="seller-state">
+                <Input id="seller-state" name="stateCode" defaultValue={organisation.stateCode ?? ""} maxLength={8} placeholder="MH" />
+              </Field>
+              <Field label="Registered address" htmlFor="seller-line1" className="sm:col-span-2">
+                <Input id="seller-line1" name="line1" defaultValue={application.address?.line1 ?? ""} maxLength={200} />
+              </Field>
+              <Field label="Address line 2" htmlFor="seller-line2">
+                <Input id="seller-line2" name="line2" defaultValue={application.address?.line2 ?? ""} maxLength={200} />
+              </Field>
+              <Field label="PIN code" htmlFor="seller-postal">
+                <Input id="seller-postal" name="postalCode" defaultValue={application.address?.postalCode ?? ""} maxLength={12} />
+              </Field>
+              <Field label="Website" htmlFor="seller-website">
+                <Input id="seller-website" name="website" type="url" defaultValue={organisation.website ?? ""} placeholder="https://" />
+              </Field>
+              <Field label="Your name" htmlFor="seller-contact">
+                <Input id="seller-contact" name="contactName" defaultValue={application.contactName} maxLength={200} required />
+              </Field>
+              <Field label="Work email" htmlFor="seller-email" hint="Changing the sign-in address is a support request.">
+                <Input id="seller-email" value={application.email} readOnly disabled />
+              </Field>
+              <Field label="Telephone" htmlFor="seller-phone">
+                <Input id="seller-phone" name="phone" defaultValue={application.phone ?? ""} maxLength={40} />
+              </Field>
+              <Field
+                label="Company description"
+                htmlFor="seller-description"
+                className="sm:col-span-2"
+                hint="What the business does, its plant or yard, and the products it supplies."
+              >
+                <Textarea id="seller-description" name="description" defaultValue={organisation.description ?? ""} rows={5} maxLength={2000} />
+              </Field>
+              <div className="sm:col-span-2">
+                <Button type="submit">Save changes</Button>
+              </div>
+            </form>
+          </Panel>
 
-      <Panel title="Licences and permits" description="Reference numbers now; certificates requested during onboarding.">
-        <div className="grid gap-5 sm:grid-cols-2">
-          <Field label="Waste carrier / permit reference" htmlFor="sp-permit">
-            <Input id="sp-permit" name="permit" placeholder="Reference number" />
-          </Field>
-          <Field label="Export registration" htmlFor="sp-export" hint="If applicable">
-            <Input id="sp-export" name="export" placeholder="Reference number" />
-          </Field>
-        </div>
-      </Panel>
+          <p className="text-xs leading-5 text-steel-500">
+            Submission state changes — approval, rejection, suspension — are made only by a PRIMEMET
+            administrator and are recorded in the audit log. They are not editable from this page.
+          </p>
+        </>
+      )}
     </PortalPage>
   );
 }

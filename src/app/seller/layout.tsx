@@ -35,10 +35,11 @@ const NAV: NavGroup[] = [
 ];
 
 /**
- * Seller shell. Open in Stage 1 so the interface can be reviewed; there is no session.
+ * Seller shell.
  *
- * TODO (Stage 2): require a SELLER session, scope listings and quotations to the
- * signed-in supplier, and redirect unauthenticated visitors to /login.
+ * The shell itself is presentation; every page inside it calls `requirePage(["SELLER"], path)`, which
+ * resolves the session from the database and redirects an anonymous or non-seller visitor before any
+ * data is read. A seller page never takes an organisation id from the URL.
  */
 export default function SellerLayout({ children }: { children: ReactNode }) {
   return (

@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
+
+import { requirePage } from "@/lib/auth/guards";
 import { Panel, PortalPage } from "@/components/portal/blocks";
 import { NotConnected } from "@/components/ui/not-connected";
 import { EmptyRow, TBody, TH, THead, TR, Table } from "@/components/ui/table";
 
 export const metadata: Metadata = { title: "Orders" };
 
-export default function SellerOrdersPage() {
+export default async function SellerOrdersPage() {
+  // A preview, but still a seller area: an anonymous visitor is redirected before anything renders.
+  await requirePage(["SELLER"], "/seller/orders");
   return (
     <PortalPage
       eyebrow="Commercial"
