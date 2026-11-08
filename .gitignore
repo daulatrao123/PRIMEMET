@@ -12,17 +12,21 @@ next-env.d.ts
 # production
 /build
 
-# environment
+# Environment files
 .env
 .env.*
 !.env.example
-# The Prisma CLI needs a parseable datasource URL to validate or diff the schema offline. That file
-# holds a deliberately fake placeholder and is read only by the CLI, never by Next.js.
-!/prisma/.env
+
+# Prisma local tooling environment — never commit
+/prisma/.env
 
 # logs
 npm-debug.log*
 yarn-error.log*
+
+# Generated audit output: `npm audit --json` snapshots are reproducible on demand and stale on arrival.
+# They describe an unpatched dependency posture and must not enter permanent public history.
+/audit-production.json
 
 # misc
 .DS_Store

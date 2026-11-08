@@ -1,0 +1,98 @@
+# Line-ending policy for PRIMEMET.
+#
+# Deliberately conservative: this file declares HOW Git should treat content. A blanket `eol=lf`
+# override would rewrite every already-committed file on the next checkout, producing a large
+# whitespace-only diff unrelated to any real change, so the override is limited to `*.mjs` — the
+# one extension whose working-tree bytes are hashed and compared across machines. See the
+# MANDATORY block below.
+#
+# Default: let Git detect text and normalise to LF in the repository (the canonical form), while
+# each developer's working tree keeps their platform convention.
+#
+# MEASURED (Windows, core.autocrlf=true): this line does NOT silence the
+# "LF will be replaced by CRLF the next time Git touches it" warning on `git add`.
+# Only an explicit `eol=lf` override does.
+
+* text=auto
+
+# --- Explicit text types ---------------------------------------------------
+# These are always text; normalise in the repository. No `eol` override, so no rewrite —
+# except `*.mjs`, which is pinned to LF for the reason given in the next block.
+*.ts        text
+*.tsx       text
+*.js        text
+*.mjs       text eol=lf
+*.cjs       text
+*.json      text
+*.md        text
+*.css       text
+*.prisma    text
+*.sql       text
+*.toml      text
+*.yml       text
+*.yaml      text
+*.example   text
+*.gitignore text
+.gitignore  text
+.gitattributes text
+
+# --- MANDATORY: `*.mjs` is pinned to LF in the working tree -------------------
+# Migration and schema integrity digests are computed from the *working-tree* source bytes:
+# `db/migrations/index.mjs` loads each migration with `readFileSync`, and `db/ledger.mjs` hashes
+# that text. The digests are frozen into `_schema_migrations`, asserted by `check-adversarial`
+# ("v001's identity is unchanged") and re-computed on every verify, so the same commit must hash
+# identically on every platform.
+#
+# With only `text`, a Windows checkout under `core.autocrlf=true` writes CRLF, every `*.mjs`
+# digest changes, and the consequences are not cosmetic:
+#   - `check-adversarial` fails two identity assertions that are correct on LF checkouts;
+#   - a database initialised from a CRLF checkout records CRLF digests, so verifying the same
+#     database from an LF checkout reports drift for a migration nobody edited.
+#
+# `eol=lf` pins the working tree to LF, which makes the hash canonical by construction. It does
+# NOT change any repository blob (they are already normalised to LF) and does NOT alter the
+# hashed content — it only stops the checkout from rewriting it. Measured on a stock Windows
+# clone: `check-adversarial` goes 130 passed / 2 failed -> 132 passed / 0 failed, with
+# `git ls-files --eol` reporting `w/lf` for every `*.mjs`.
+#
+# Do not "simplify" this back to plain `text`: the four `*.mjs`/`*.ts` digests above would
+# silently diverge between platforms again, and only on a fresh clone — never on the tree the
+# change was authored in.
+
+# --- Always binary ---------------------------------------------------------
+# Never diff, never convert. Declared so Git cannot corrupt them by guessing.
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.webp      binary
+*.avif      binary
+*.ico       binary
+*.pdf       binary
+*.zip       binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.otf       binary
+
+# --- Generated / vendored --------------------------------------------------
+package-lock.json  -diff linguist-generated
+prisma/migrations/** -diff linguist-generated
+
+# ---------------------------------------------------------------------------
+# PARTIALLY ENABLED — `*.mjs` only, by owner decision (F-A remediation).
+#
+# The wider strict policy below is still NOT applied:
+#
+#     *.ts text eol=lf
+#     *.tsx text eol=lf
+#     ...
+#
+# `*.mjs` carries `eol=lf` because its bytes are hashed into migration integrity digests. No
+# other extension is hashed, so no other extension needs the override, and pinning them would
+# rewrite the tree once for no security or integrity benefit.
+#
+# If the blanket policy is ever wanted, do it as a single dedicated commit
+# (`git add --renormalize .`) so review shows one whitespace-only change instead of mixing it
+# into feature work.
+# ---------------------------------------------------------------------------
