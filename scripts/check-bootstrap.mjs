@@ -2,16 +2,16 @@
 /**
  * PRIMEMET — bootstrap readiness check.
  *
- * The organisation bootstrap is designed in `docs/PRIMEMET_ORGANISATION_BOOTSTRAP.md` and is deliberately
- * **not implemented**. That makes it easy for the design's guarantees to rot: someone adds an admin
- * creation route, a seed script, or a default credential, and nothing notices, because the bootstrap
- * itself writes no code.
+ * The organisation bootstrap is designed in `docs/PRIMEMET_ORGANISATION_BOOTSTRAP.md` and, since D-BOOT-1,
+ * implemented as exactly one owner-run CLI: `db/bootstrap-organisation.mjs`. That makes it easy for the
+ * design's guarantees to rot: someone adds a second admin creation route, a seed script, or a default
+ * credential, and nothing notices. This check is what notices.
  *
  * This check asserts the properties the design depends on, so a regression fails here instead of being
  * discovered during the first production bootstrap:
  *
  *   1. no path in the application can create an admin
- *   2. no credential, email or seed script exists anywhere
+ *   2. no credential, email or seed script exists anywhere, except the one allowlisted CLI
  *   3. the platform organisation is storable (`orgKind`) and unique
  *   4. `orgType` cannot express PRIMEMET, so the two columns cannot be conflated again
  *   5. the audit trail the bootstrap writes to is append-only and carries the fields it needs
@@ -23,7 +23,7 @@
  * Offline. No database is contacted and nothing is written.
  */
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { auditLog, organisation } from "../db/collections/core.mjs";
@@ -155,8 +155,15 @@ process.stdout.write("\n2. No credential is seeded anywhere\n");
   const candidates = [...sources, ...walk("scripts").filter((p) => p.endsWith(".mjs")), ...walk("db").filter((p) => p.endsWith(".mjs"))].filter(
     (path) => !path.endsWith("check-bootstrap.mjs"),
   );
+  // D-BOOT-1: exactly one file may carry a bootstrap-shaped name, and it is named here by its full
+  // path. An allowlist rather than a pattern, because a pattern that admits "bootstrap" admits every
+  // future file that calls itself one. The assertions below are what keep the exemption narrow.
+  const BOOTSTRAP_CLI_ALLOWLIST = new Set(["db/bootstrap-organisation.mjs"]);
   const seedLike = candidates.filter(
-    (path) => /seed|bootstrap|fixture|demo-data/i.test(path) && !/check-|verify-|report-/.test(path),
+    (path) =>
+      /seed|bootstrap|fixture|demo-data/i.test(path) &&
+      !/check-|verify-|report-/.test(path) &&
+      !BOOTSTRAP_CLI_ALLOWLIST.has(path.replace(/\\/g, "/")),
   );
   check("no seeding script exists that could create an account", seedLike.length === 0, seedLike.join(", ") || "none");
 
@@ -218,7 +225,48 @@ process.stdout.write("\n2. No credential is seeded anywhere\n");
     "the route no longer falls back to the decoy, or it now writes users",
   );
 
-  check("the design states that no password is created", /no `passwordHash`|no password/i.test(doc));
+  check(
+    "the design records the approved D-BOOT-1 decision and the CLI that implements it",
+    /D-BOOT-1/.test(doc) && /bootstrap-organisation\.mjs/.test(doc),
+  );
+
+  // -------------------------------------------------------------------------
+  // D-BOOT-1: the one bootstrap CLI, and the properties that make it safe.
+  // -------------------------------------------------------------------------
+  // The allowlist above admits exactly one path. These assertions are what make that exemption narrow:
+  // the file must be a CLI that refuses the runtime identity, requires an explicit address, defaults to
+  // a dry run, never touches the guard collection, and is unreachable from the application.
+  const cliPath = "db/bootstrap-organisation.mjs";
+  check("the bootstrap CLI exists at the allowlisted path", existsSync(cliPath), cliPath);
+  const cli = existsSync(cliPath) ? readFileSync(cliPath, "utf8") : "";
+  check(
+    "the bootstrap CLI refuses the runtime identity",
+    /RUNTIME_ROLE\s*=\s*"primemet_app"/.test(cli) && /BOOTSTRAP_APP_IDENTITY/.test(cli),
+  );
+  check(
+    "the bootstrap CLI requires an explicit admin address and has no default",
+    /--admin-email/.test(cli) && /BOOTSTRAP_MISSING_ARGUMENT/.test(cli) && !/adminEmail\s*=\s*"[^"]*@/.test(cli),
+  );
+  check(
+    "the bootstrap CLI is a dry run unless --apply is passed",
+    /apply:\s*\{\s*type:\s*"boolean",\s*default:\s*false\s*\}/.test(cli) && /if\s*\(!args\.apply\)/.test(cli),
+  );
+  check(
+    "the bootstrap CLI never writes the guard collection",
+    !/collection\(\s*GUARDS\s*\)/.test(cli) && !/ensurePermissionGuards/.test(cli),
+  );
+  check(
+    "the bootstrap CLI seeds the pointer through the existing guard function",
+    /ensurePlatformIdentityCollection/.test(cli),
+  );
+  check(
+    "the bootstrap CLI hashes with the application's own implementation",
+    /from\s+"\.\.\/src\/lib\/auth\/password\.ts"/.test(cli) && /hashPassword\(/.test(cli),
+  );
+  check(
+    "no application source imports the bootstrap CLI",
+    !sources.some((path) => readFileSync(path, "utf8").includes("bootstrap-organisation")),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -303,7 +351,12 @@ process.stdout.write("\n7. The design states the controls it claims\n");
     [/runtime identities lack owner privileges/i, "runtime identities lack owner privileges"],
   ];
   for (const [pattern, label] of requirements) check(`the design addresses: ${label}`, pattern.test(doc));
-  check("the design marks itself as design-only", /design only/i.test(doc));
+  // D-BOOT-1 replaced "design only" with an implemented CLI, so the assertion now checks that the
+  // document says which of the two it is, rather than pinning it to the pre-implementation wording.
+  check(
+    "the design states its own implementation status",
+    /D-BOOT-1 is decided and implemented/i.test(doc) && /bootstrap-organisation\.mjs/.test(doc),
+  );
 }
 
 process.stdout.write(`\n${passed} passed, ${failures.length} failed\n`);

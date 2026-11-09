@@ -1,8 +1,15 @@
 # PRIMEMET — organisation bootstrap and the first SUPER_ADMIN
 
-**Design only.** No account, credential, token or organisation was created by this work, and no bootstrap
-script is implemented. Nothing here is committed, pushed or deployed. Any step that would touch a real
-database is marked as an operational action for the owner.
+**D-BOOT-1 is decided and implemented.** The bootstrap is `db/bootstrap-organisation.mjs`, a one-time
+owner-run CLI guarded by `npm run check:bootstrap` and exercised by `npm run check:bootstrap-cli`. The
+implementation deviates from step 3 of §2.2 in one respect, recorded there and in the module header: the
+account is created `ACTIVE` with a scrypt password rather than `INVITED` without one, because the
+approved decision requires a usable first login.
+
+**Nothing has been run against a real database.** No account, credential, token or organisation was
+created by this work; nothing is committed, pushed or deployed; and the production administrator does
+not exist. Any step that touches a real database is marked as an operational action for the owner. §6 is
+the runbook.
 
 ---
 
@@ -41,8 +48,8 @@ change that makes a silent second platform organisation impossible rather than m
 
 ## 2. The bootstrap procedure
 
-**Status: designed, not implemented.** The script described here does not exist yet; implementing it is an
-owner decision (§5, D-BOOT-1).
+**Status: designed and implemented as a CLI (D-BOOT-1).** The command below is the interface
+`db/bootstrap-organisation.mjs` exposes; §6 is the runbook.
 
 ### 2.1 Prerequisites
 
@@ -76,11 +83,17 @@ bootstrap-organisation --apply
      invoice ends up under the wrong entity.
    - More than one live row → abort. The unique index should have prevented it; if it did not, the database
      is in a state that needs a human.
-3. **First admin user: `INVITED`, never `ACTIVE`.** Insert with `status: "INVITED"`, `emailVerifiedAt: null`,
-   **no `passwordHash`**, `mfaEnabled: false`, `failedLoginCount: 0`. The account cannot authenticate until
-   the invitation is accepted and a password is set through the normal M2 flow, so the bootstrap never
-   creates a usable credential — and never a shared or default one.
-   - Existing user with that email: if `role: ADMIN`, continue; otherwise abort (an email is one identity).
+3. **First admin user: `ACTIVE`, with a password the operator supplies or generates.**
+   *Amended by the approved D-BOOT-1 decision.* The original design created the user `INVITED` with no
+   `passwordHash`, so nothing it produced could ever log in. The implementation inserts
+   `status: "ACTIVE"`, `emailVerifiedAt: now`, a `passwordHash` produced by the application's own
+   `hashPassword`, `mfaEnabled: false` and `failedLoginCount: 0`.
+   The design's concern — that a bootstrap-chosen password is a shared secret — is answered by never
+   defaulting: there is no fallback value anywhere, a weak password is refused by `passwordProblem`
+   (the same policy the application enforces), a generated password is shown once on stderr and never
+   stored, and no password or hash is ever written to `audit_logs`.
+   - Existing user with that email: if `role: ADMIN` and `status: "ACTIVE"`, continue; a different role
+     or a non-active status aborts (an email is one identity).
 4. **Admin profile: `SUPER_ADMIN`.** Insert `admin_profiles` with `tier: "SUPER_ADMIN"`, `isActive: true`,
    `mfaRequired: true`, and a `staffCode` derived from the operator's own numbering (`PM-0001` here is an
    example, not a default).
@@ -102,7 +115,7 @@ bootstrap-organisation --apply
 
 | Not done | Because |
 |---|---|
-| Create a password, or any credential | M2 has no password policy approved yet, and a bootstrap-chosen password is a shared secret by definition |
+| Invent a credential | *Amended:* it does create one, but only from an operator-supplied or operator-generated value that passes the application's own policy. There is no default, no literal and no fallback anywhere in the repository |
 | Send the invitation itself | Email delivery is an M2 concern with its own provider decision |
 | Grant any permission explicitly | A super admin's tier default already includes all 74; an explicit GRANT would be a second source of truth |
 | Create a second admin | One human is enough to start; the second is granted through the application, which exercises the real path |
@@ -151,7 +164,138 @@ from backup.
 
 | ID | Question | Recommendation | Blocks |
 |---|---|---|---|
-| **D-BOOT-1** | Implement the bootstrap as a CLI under owner credentials (recommended), or as a GitHub Actions `workflow_dispatch` job with a typed confirmation? | CLI. It runs once per environment, it keeps owner credentials out of CI logs, and it cannot be triggered by a pull request. | Implementing the bootstrap at all |
+| **D-BOOT-1** | Implement the bootstrap as a CLI under owner credentials (recommended), or as a GitHub Actions `workflow_dispatch` job with a typed confirmation? | **Decided. CLI.** Implemented as `db/bootstrap-organisation.mjs`; it runs once per environment, keeps owner credentials out of CI logs, and cannot be triggered by a pull request. | **Resolved** — see §6 |
 | **D-BOOT-2** | Is there a supported *repair* path for a lost super admin, or is it a restore-from-backup incident? | Treat it as a backup/restore event until M2 has a tested break-glass procedure. A repair mode that exists is a repair mode that gets used. | The recovery section of the runbook |
 | **D-BOOT-3** | `staffCode` format for the operator's own admins (`PM-0001`?) | Operator's numbering; the field is unique and free-form, so no schema decision is needed — only an operational convention. | Cosmetic |
 | **D-BOOT-4** | Who may accept the first invitation — must MFA enrolment complete before the account can act? | Yes: `mfaRequired: true` on the first profile, enforced at first login. | M2 login flow |
+
+---
+
+## 6. Runbook — the first production bootstrap (D-BOOT-1)
+
+`db/bootstrap-organisation.mjs` is the only code path in the repository that can create an
+administrator. It is not imported by anything under `src/`, it has no HTTP surface, and
+`npm run check:bootstrap` fails if a second admin-creation path appears.
+
+### 6.1 Before you start
+
+- Migrations `v001`–`v010` applied and `npm run db:verify` clean.
+- `primemet_owner` credentials in a **local shell session only** — never in Vercel, never `.env.local`,
+  never in CI logs.
+- `PLATFORM_ORGANISATION_ID` **unset**. This run creates the organisation and seeds `_platform_identity`
+  itself; supplying a pre-existing id would make the CLI refuse on a pointer conflict.
+- The platform legal name, ISO-3166 alpha-2 country code, operator email, operator full name and staff
+  code decided and recorded outside the repository. None of them has a default.
+
+### 6.2 Dry run first — writes nothing
+
+```bash
+PRIMEMET_ENV=production \
+MONGODB_DB=primemet \
+MONGODB_URI="<primemet_owner connection string>" \
+node db/bootstrap-organisation.mjs \
+  --legal-name "<registered legal name>" \
+  --country-code IN \
+  --admin-email <operator address> \
+  --admin-name "<operator full name>" \
+  --staff-code PM-0001 \
+  --confirm "<registered legal name>"
+```
+
+Without `--apply` this is a dry run. The plan prints three `insert` lines and one `seed` line, then
+`Dry run: nothing was changed.` Confirm the identity strings before continuing.
+
+### 6.3 Apply
+
+Add `--apply`. The password is read twice from a hidden prompt:
+
+```bash
+PRIMEMET_ENV=production MONGODB_DB=primemet MONGODB_URI="<owner connection string>" \
+node db/bootstrap-organisation.mjs \
+  --legal-name "<registered legal name>" --country-code IN \
+  --admin-email <operator address> --admin-name "<operator full name>" \
+  --staff-code PM-0001 --confirm "<registered legal name>" \
+  --apply
+```
+
+Or have one generated and shown once on stderr:
+
+```bash
+... same arguments ... --apply --generate
+```
+
+The generated password is printed once and is never stored — record it in the password manager before
+closing the terminal. Either way the audit trail records that a credential was set, never the credential.
+
+### 6.4 Verify
+
+```bash
+npm run db:verify
+```
+
+Then sign in at `/admin/login` with the supplied address. Re-running §6.2 must now print three `verify`
+lines and one `verify` for the pointer — that is the idempotency proof, and it writes nothing.
+
+### 6.5 If it stops
+
+Every refusal names its own fix. Some need a human decision:
+
+- `BOOTSTRAP_ORGANISATION_MISMATCH` — a platform organisation already exists with a different legal name
+  or country code. Decide which is correct; the CLI will not rewrite the operator's legal identity.
+- `BOOTSTRAP_POINTER_CONFLICT` — `_platform_identity` already names a different organisation.
+  Re-anchoring is an owner decision, not a side effect of a bootstrap.
+- `BOOTSTRAP_AMBIGUOUS_ORGANISATION` — more than one live `orgKind: "PRIMEMET"` row. The partial unique
+  index should have prevented it, so the database needs a human before anything else happens.
+- `BOOTSTRAP_USER_NOT_BOOTSTRAP_ORIGIN` / `BOOTSTRAP_PROFILE_NOT_BOOTSTRAP_ORIGIN` — an ADMIN user or
+  SUPER_ADMIN profile already exists but no bootstrap audit row records creating it. The CLI will not
+  adopt it, because adopting an account it did not create is a silent grant of SUPER_ADMIN. Use a
+  different `--admin-email`, or investigate how that account was made.
+
+### 6.5.1 Partial completion — the one state that is not a refusal
+
+The organisation, user, admin profile and audit rows commit in a single MongoDB transaction. The
+`_platform_identity` pointer is seeded **afterwards**, because MongoDB refuses DDL (`createCollection`,
+`collMod`) inside a transaction. If that step fails — a DDL permission error, a dropped connection, a
+validator rejection — the account exists but resolves to `NO_ORGANISATION`, so every permission is
+refused.
+
+The CLI reports this as **PARTIAL COMPLETION**, never as success and never as a plain refusal:
+
+```
+⚠ PARTIAL COMPLETION — the account exists but cannot sign in yet.
+✖ PARTIAL COMPLETION — the business documents were committed, but the protected platform identity
+  pointer was not established.
+          committed    organisation 1, user 1, profile 1, audit 3
+          requestId    <uuid>
+          organisation <organisation-id>
+          cause        <the underlying error>
+```
+
+**Exit code 3** distinguishes it from a refusal (exit 1, nothing changed) and from success (exit 0). A
+deployment script must treat 3 as "re-run", not as "failed, start over".
+
+**Recovery — re-run the identical command.** Every step is idempotent:
+
+1. The organisation, user and profile are found and verified, not re-inserted.
+2. The provenance check passes, because the audit rows were committed in the same transaction as the
+   objects they describe.
+3. Only the pointer is seeded, and one `BOOTSTRAP_VERIFIED` audit row is appended.
+
+No password is requested on the re-run, because the account already exists and its hash is not rewritten.
+
+**Do not** delete the organisation, the user or the profile to "start clean". They are correct; only the
+pointer is missing. Deleting them destroys the audit trail that proves the account's origin, and the
+provenance check will then refuse to adopt the account you recreate.
+
+**Verify the repair** with the same command as §6.4: the pointer must name the organisation, and
+`npm run check:mongodb` must pass.
+
+### 6.6 What it will never do
+
+| Never | Because |
+|---|---|
+| Touch `_permission_guards` | The first super admin holds `ACCESS_GRANT_PERMISSION` from the tier default, which is evaluated, not stored |
+| Run under `primemet_app` | The app identity is refused by role name before any read |
+| Overwrite an existing organisation, user or pointer | Insert-or-verify with an explicit abort on any difference |
+| Create a second admin, send email, or grant a permission explicitly | One human is enough to start; the second admin is created through the application, which exercises the real path |
+| Expose an HTTP surface | Nothing under `src/` imports it, and `check:bootstrap` asserts that |
